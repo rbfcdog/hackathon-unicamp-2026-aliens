@@ -7,6 +7,10 @@
 data/*.csv
 data/subsidios/
 data/processos_exemplo/
+data/**/*.pdf
+data/**/*.xlsx
+data/**/*.xlsm
+data/uploads/
 
 # Dependências de pacotes
 node_modules/
@@ -26,6 +30,11 @@ build/
 *.tmp
 *.cache
 .DS_Store
+.pytest_cache/
+.ruff_cache/
+.langgraph_api/
+.coverage
+htmlcov/
 Thumbs.db
 
 # IDEs

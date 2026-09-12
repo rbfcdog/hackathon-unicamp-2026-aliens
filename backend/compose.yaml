@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-EnterOS}
+      POSTGRES_USER: ${POSTGRES_USER:-enter-os}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-enter-os}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - enter_os_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-enter-os} -d ${POSTGRES_DB:-EnterOS}"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: .
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      APP_NAME: ${APP_NAME:-EnterOS}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      API_PREFIX: ${API_PREFIX:-/v1}
+      UV_CACHE_DIR: /tmp/uv-cache
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-enter-os}:${POSTGRES_PASSWORD:-enter-os}@postgres:5432/${POSTGRES_DB:-EnterOS}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      MODEL_ARTIFACT_PATH: ${MODEL_ARTIFACT_PATH:-artifacts/judicial-risk-v5.joblib}
+      DOCUMENT_ROOT: /data
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-enter-os}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+      LANGSMITH_WORKSPACE_ID: ${LANGSMITH_WORKSPACE_ID:-}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ../data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  enter_os_postgres_data:
