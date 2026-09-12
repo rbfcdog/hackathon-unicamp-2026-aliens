@@ -153,6 +153,12 @@ function ReviewResult({ review }: { review: ReviewResponse }) {
             <span>Risco</span>
             <strong>{review.strategy.risk_band}</strong>
           </div>
+          {review.strategy.agreement_range && (
+            <div>
+              <span>Valor-alvo do acordo</span>
+              <strong>{currency.format(review.strategy.agreement_range.target)}</strong>
+            </div>
+          )}
         </div>
       )}
 

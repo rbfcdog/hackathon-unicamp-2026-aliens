@@ -583,7 +583,22 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
             <ScanSearch size={16} />
             <span>Revisão estratégica</span>
           </button>
-
+          <button
+            className="primary-button workspace-analysis-button"
+            disabled={
+              reviewing ||
+              documents.length === 0 ||
+              reviewQuestion.trim().length < 10
+            }
+            onClick={() => {
+              setArtifact({ kind: "review" });
+              void runReview();
+            }}
+            type="button"
+          >
+            {reviewing ? <span className="spinner" /> : <ScanSearch size={15} />}
+            {reviewing ? "Analisando documentos" : "Analisar documentos"}
+          </button>
           <button
             aria-controls={documentsMenuId}
             aria-expanded={documentsOpen}
@@ -715,7 +730,7 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
               <p>
                 {isDraft
                   ? "Converse normalmente. Anexe documentos quando quiser uma resposta fundamentada nos autos."
-                  : "O assistente consulta somente os documentos deste processo e identifica cada fonte usada."}
+                  : "Converse normalmente. O assistente consulta os autos somente quando a resposta precisa deles."}
               </p>
             </div>
           ) : null}

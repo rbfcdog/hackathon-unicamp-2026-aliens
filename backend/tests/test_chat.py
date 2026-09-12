@@ -157,6 +157,35 @@ async def test_documentless_chat_skips_the_document_agent() -> None:
     assert result["consulted_documents"] == []
 
 
+
+@pytest.mark.asyncio
+async def test_chat_with_documents_does_not_force_a_read_for_a_greeting() -> None:
+    agent_calls = 0
+
+    async def greeting_agent(_: object) -> AIMessage:
+        nonlocal agent_calls
+        agent_calls += 1
+        return AIMessage(content="Olá! Como posso ajudar?")
+
+    async def greeting_finalizer(_: object) -> AIMessage:
+        return AIMessage(content="Olá! Como posso ajudar?")
+
+    graph = build_chat_react_graph(
+        RunnableLambda(greeting_agent),
+        RunnableLambda(greeting_finalizer),
+    )
+    result = await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="olaa")],
+            "allowed_document_paths": ["cases/autos.pdf"],
+            "agent_turns": 0,
+        }
+    )
+
+    assert agent_calls == 1
+    assert result["answer"] == "Olá! Como posso ajudar?"
+    assert result["consulted_documents"] == []
+
 @pytest.mark.asyncio
 async def test_chat_stream_reports_a_timeout_instead_of_waiting_indefinitely(
     monkeypatch: pytest.MonkeyPatch,

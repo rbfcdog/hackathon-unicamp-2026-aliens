@@ -706,7 +706,7 @@ a {
 }
 
 .strategy-strip {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
 }
 
 .factor-columns {
@@ -2324,6 +2324,15 @@ a {
 
 .workspace-tree-item.review svg {
   color: var(--amber);
+}
+
+.workspace-analysis-button {
+  width: calc(100% - 18px);
+  min-height: 36px;
+  justify-content: center;
+  margin: 0 9px 10px;
+  border-radius: 7px;
+  font-size: 10px;
 }
 
 .workspace-folder-toggle {
