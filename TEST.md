@@ -12,6 +12,8 @@ No Thunder Client, abra **Env** e crie um ambiente local:
 | `analysisId` | deixe vazio até criar uma análise |
 | `uploadedPath` | copie `path` da resposta do upload |
 | `processNumber` | `1764352-89.2025.8.06.1818` |
+| `caseNumber` | `0801234-56.2024.8.10.0001` |
+| `chatId` | copie `id` ao criar a conversa |
 
 Selecione esse ambiente antes de executar as requisições. Para bodies JSON:
 
@@ -30,6 +32,7 @@ Selecione esse ambiente antes de executar as requisições. Para bodies JSON:
 6. Consultar a linha de um processo quando houver correspondência na base histórica.
 7. Revisar usando os documentos enviados e, opcionalmente, a linha referenciada.
 8. Executar revisão judicial do caso 01 ou 02.
+9. Criar uma conversa documental e validar o stream SSE.
 
 ---
 
@@ -423,6 +426,64 @@ POST
 ```
 
 **Esperado:** `200 OK`.
+
+---
+
+## 10. Chat documental com SSE
+
+Liste os documentos vinculados:
+
+```text
+GET {{baseUrl}}/v1/processes/{{caseNumber}}/documents
+```
+
+Anexe um documento diretamente ao processo, se necessário:
+
+```text
+POST {{baseUrl}}/v1/processes/{{caseNumber}}/documents
+```
+
+Use **Form** com `document_type` como texto e `file` como PDF ou CSV. Depois crie a conversa:
+
+```text
+POST {{baseUrl}}/v1/processes/{{caseNumber}}/chats
+```
+
+Copie o `id` para `chatId`. Para enviar a mensagem, use:
+
+```text
+POST {{baseUrl}}/v1/processes/{{caseNumber}}/chats/{{chatId}}/messages/stream
+```
+
+Header:
+
+```text
+Accept: text/event-stream
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "message": "Qual é o valor da causa e em qual página essa informação aparece?"
+}
+```
+
+**Esperado:** `200 OK`, `Content-Type: text/event-stream` e eventos na ordem lógica
+`ready`, leituras `tool_start`/`tool_end`, vários `token` e `complete`. O `complete.message`
+deve aparecer no histórico:
+
+```text
+GET {{baseUrl}}/v1/processes/{{caseNumber}}/chats/{{chatId}}
+```
+
+O Swagger e alguns clientes exibem o corpo somente quando a conexão termina. Para observar
+cada evento imediatamente, execute a mesma requisição com `curl -N`. No frontend, abra o
+processo, entre na **Área de trabalho** e selecione **Assistente**.
+
+Teste de isolamento: tente consultar o mesmo `chatId` usando outro `caseNumber`. O esperado é
+`404`; uma conversa não pode ser aberta a partir de outro processo.
 
 ---
 

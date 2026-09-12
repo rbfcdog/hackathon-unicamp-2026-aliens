@@ -10,7 +10,11 @@ from app.documents import DocumentRepository
 from app.documents.repository import SUPPORTED_DOCUMENT_SUFFIXES
 from app.graph import analysis_graph
 from app.graph.nodes import AnalysisInputResolutionError
-from app.schemas.analysis import AnalysisRequest, AnalysisResponse, AnalysisResult
+from app.schemas.analysis import AnalysisRequest, AnalysisResponse, AnalysisResult, EvidenceInput
+from app.schemas.documents import DocumentReference
+from app.schemas.processes import LegalProcessCreate
+from app.services.process_documents import process_document_service
+from app.services.processes import legal_process_service
 
 
 class AnalysisExecutionError(RuntimeError):
@@ -26,6 +30,38 @@ class AnalysisService:
         settings = get_settings()
         repository = DocumentRepository(settings.document_root)
         try:
+            process = (
+                await legal_process_service.upsert_from_analysis(session, request)
+                if request.state is not None and request.claim_amount is not None
+                else await legal_process_service.get_by_case_number(session, request.case_number)
+            )
+            persisted_documents = await process_document_service.list(
+                session,
+                process.case_number if process is not None else request.case_number,
+            )
+            documents_by_path = {
+                document.path: DocumentReference(
+                    path=document.path,
+                    document_type=document.document_type,
+                )
+                for document in persisted_documents.documents
+            }
+            documents_by_path.update({document.path: document for document in request.documents})
+            context_values = {
+                **request.model_dump(mode="python"),
+                "documents": list(documents_by_path.values()),
+            }
+            if process is not None:
+                context_values.update(
+                    {
+                        "case_number": process.case_number,
+                        "state": process.state,
+                        "sub_subject": process.sub_subject,
+                        "claim_amount": float(process.claim_amount),
+                        "evidence": EvidenceInput.model_validate(process.evidence),
+                    }
+                )
+            context_request = AnalysisRequest.model_validate(context_values)
             normalized_documents = [
                 document.model_copy(
                     update={
@@ -35,14 +71,14 @@ class AnalysisService:
                         )[1]
                     }
                 )
-                for document in request.documents
+                for document in context_request.documents
             ]
         except ValueError as exc:
             raise AnalysisInputError(str(exc)) from exc
-        normalized_request = request.model_copy(update={"documents": normalized_documents})
+        normalized_request = context_request.model_copy(update={"documents": normalized_documents})
         request_payload = normalized_request.model_dump(mode="json")
         analysis = Analysis(
-            case_number=request.case_number,
+            case_number=normalized_request.case_number,
             status="processing",
             request_payload=request_payload,
         )
@@ -59,7 +95,7 @@ class AnalysisService:
                     "tags": ["analysis", settings.environment],
                     "metadata": {
                         "case_reference": hashlib.sha256(
-                            request.case_number.encode()
+                            normalized_request.case_number.encode()
                         ).hexdigest()[:16],
                         "document_count": len(normalized_documents),
                         "model": settings.openai_model,
@@ -69,6 +105,17 @@ class AnalysisService:
             result = AnalysisResult.model_validate(graph_result)
             analysis.status = "completed"
             analysis.result_payload = result.model_dump(mode="json")
+            if result.model_inputs is not None:
+                await legal_process_service.upsert(
+                    session,
+                    LegalProcessCreate(
+                        case_number=normalized_request.case_number,
+                        state=result.model_inputs.state,
+                        sub_subject=result.model_inputs.sub_subject,
+                        claim_amount=result.model_inputs.claim_amount,
+                        evidence=result.model_inputs.evidence,
+                    ),
+                )
         except AnalysisInputResolutionError as exc:
             message = str(exc)
             analysis.status = "failed"

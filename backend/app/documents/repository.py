@@ -6,8 +6,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
+import pymupdf
+import pymupdf4llm
 from openpyxl import load_workbook
-from pypdf import PdfReader
+from pymupdf4llm.ocr import OCRMode
 
 SUPPORTED_DOCUMENT_SUFFIXES = frozenset({".pdf", ".csv", ".xlsx", ".xlsm"})
 SUPPORTED_UPLOAD_SUFFIXES = frozenset({".pdf", ".csv"})
@@ -74,6 +76,8 @@ class DocumentRepository:
         filename = original_filename.strip()
         if not filename or Path(filename).name != filename:
             raise ValueError("Upload filename must be a plain filename")
+        if len(filename) > 200:
+            raise ValueError("Upload filename must contain at most 200 characters")
         suffix = Path(filename).suffix.lower()
         if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
             expected = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
@@ -118,17 +122,32 @@ class DocumentRepository:
             "sha256": digest.hexdigest(),
         }
 
+    def delete_upload(self, relative_path: str) -> None:
+        path, normalized = self.resolve(
+            relative_path,
+            expected_suffixes=set(SUPPORTED_UPLOAD_SUFFIXES),
+        )
+        relative = Path(normalized)
+        if len(relative.parts) != 3 or relative.parts[0] != "uploads":
+            raise ValueError("Only managed uploads can be deleted")
+        path.unlink()
+        path.parent.rmdir()
+
     @staticmethod
     def _validate_pdf_upload(path: Path) -> None:
         with path.open("rb") as uploaded:
             if b"%PDF-" not in uploaded.read(1024):
                 raise ValueError("Uploaded file does not contain a PDF header")
-            uploaded.seek(0)
-            reader = PdfReader(uploaded)
-            if reader.is_encrypted:
-                raise ValueError("Encrypted PDF uploads are not supported")
-            if not reader.pages:
-                raise ValueError("Uploaded PDF has no pages")
+        try:
+            with pymupdf.open(path) as document:
+                if document.needs_pass:
+                    raise ValueError("Encrypted PDF uploads are not supported")
+                if document.page_count == 0:
+                    raise ValueError("Uploaded PDF has no pages")
+        except ValueError:
+            raise
+        except (pymupdf.FileDataError, RuntimeError) as exc:
+            raise ValueError("Uploaded PDF is invalid") from exc
 
     @classmethod
     def _validate_csv_upload(cls, path: Path) -> None:
@@ -160,43 +179,65 @@ class DocumentRepository:
         relative_path: str,
         *,
         start_page: int = 1,
-        max_pages: int = 5,
-        max_characters: int = 12_000,
+        max_pages: int | None = None,
+        max_characters: int | None = None,
     ) -> dict[str, Any]:
         if start_page < 1:
             raise ValueError("start_page must be at least 1")
-        if not 1 <= max_pages <= 10:
-            raise ValueError("max_pages must be between 1 and 10")
-        if not 1_000 <= max_characters <= 20_000:
-            raise ValueError("max_characters must be between 1000 and 20000")
+        if max_pages is not None and max_pages < 1:
+            raise ValueError("max_pages must be at least 1")
+        if max_characters is not None and max_characters < 1:
+            raise ValueError("max_characters must be at least 1")
 
         path, normalized = self.resolve(relative_path, expected_suffixes={".pdf"})
-        reader = PdfReader(path)
-        if reader.is_encrypted:
-            raise ValueError(f"Encrypted PDF is not supported: {normalized}")
-        total_pages = len(reader.pages)
+        try:
+            with pymupdf.open(path) as document:
+                if document.needs_pass:
+                    raise ValueError(f"Encrypted PDF is not supported: {normalized}")
+                total_pages = document.page_count
+        except ValueError:
+            raise
+        except (pymupdf.FileDataError, RuntimeError) as exc:
+            raise ValueError(f"Invalid PDF: {normalized}") from exc
         if start_page > total_pages:
             raise ValueError(f"start_page exceeds the PDF page count ({total_pages})")
 
-        last_page = min(total_pages, start_page + max_pages - 1)
-        chunks: list[str] = []
+        last_page = (
+            total_pages
+            if max_pages is None
+            else min(total_pages, start_page + max_pages - 1)
+        )
+        extracted_pages = pymupdf4llm.to_markdown(
+            str(path),
+            pages=list(range(start_page - 1, last_page)),
+            page_chunks=True,
+            use_ocr=OCRMode.SELECT_KEEP_OLD,
+            ocr_dpi=300,
+            ocr_language="por+eng",
+            show_progress=False,
+            table_output="markdown",
+        )
+        content_parts: list[str] = []
         characters = 0
         truncated = False
         pages_read = 0
-        for page_number in range(start_page, last_page + 1):
-            text = reader.pages[page_number - 1].extract_text() or ""
-            chunk = f"--- página {page_number} ---\n{text.strip()}\n"
-            remaining = max_characters - characters
-            if len(chunk) > remaining:
-                chunks.append(chunk[:remaining])
-                truncated = True
-                pages_read += 1
-                break
-            chunks.append(chunk)
-            characters += len(chunk)
+        for page_number, page in enumerate(extracted_pages, start=start_page):
             pages_read += 1
+            text = str(page["text"]).strip()
+            if not text:
+                continue
+            chunk = f"--- página {page_number} ---\n{text}"
+            part = f"\n\n{chunk}" if content_parts else chunk
+            if max_characters is not None:
+                remaining = max_characters - characters
+                if len(part) > remaining:
+                    content_parts.append(part[:remaining])
+                    truncated = True
+                    break
+            content_parts.append(part)
+            characters += len(part)
 
-        content = "\n".join(chunks).strip()
+        content = "".join(content_parts).strip()
         return {
             "status": "ok" if content else "empty",
             "kind": "pdf",
@@ -206,6 +247,10 @@ class DocumentRepository:
             "total_pages": total_pages,
             "content": content,
             "truncated": truncated or last_page < total_pages,
+            "extraction_engine": "pymupdf4llm",
+            "ocr_mode": "select_keep_old",
+            "ocr_language": "por+eng",
+            "ocr_dpi": 300,
         }
 
     def read_spreadsheet(
@@ -214,15 +259,15 @@ class DocumentRepository:
         *,
         sheet_name: str | None = None,
         start_row: int = 1,
-        max_rows: int = 50,
-        max_characters: int = 12_000,
+        max_rows: int | None = None,
+        max_characters: int | None = None,
     ) -> dict[str, Any]:
         if start_row < 1:
             raise ValueError("start_row must be at least 1")
-        if not 1 <= max_rows <= 200:
-            raise ValueError("max_rows must be between 1 and 200")
-        if not 1_000 <= max_characters <= 20_000:
-            raise ValueError("max_characters must be between 1000 and 20000")
+        if max_rows is not None and max_rows < 1:
+            raise ValueError("max_rows must be at least 1")
+        if max_characters is not None and max_characters < 1:
+            raise ValueError("max_characters must be at least 1")
 
         path, normalized = self.resolve(
             relative_path,
@@ -241,7 +286,11 @@ class DocumentRepository:
             total_columns = sheet.max_column or 0
             if start_row > total_rows:
                 raise ValueError(f"start_row exceeds the worksheet row count ({total_rows})")
-            end_row = min(total_rows, start_row + max_rows - 1)
+            end_row = (
+                total_rows
+                if max_rows is None
+                else min(total_rows, start_row + max_rows - 1)
+            )
             lines: list[str] = []
             characters = 0
             truncated = False
@@ -250,19 +299,20 @@ class DocumentRepository:
                 sheet.iter_rows(
                     min_row=start_row,
                     max_row=end_row,
-                    max_col=min(total_columns, 50),
+                    max_col=total_columns,
                     values_only=True,
                 ),
                 start=start_row,
             ):
                 rendered = "\t".join(self._render_cell(value) for value in values).rstrip()
                 line = f"[linha {row_number}] {rendered}\n"
-                remaining = max_characters - characters
-                if len(line) > remaining:
-                    lines.append(line[:remaining])
-                    truncated = True
-                    rows_read += 1
-                    break
+                if max_characters is not None:
+                    remaining = max_characters - characters
+                    if len(line) > remaining:
+                        lines.append(line[:remaining])
+                        truncated = True
+                        rows_read += 1
+                        break
                 lines.append(line)
                 characters += len(line)
                 rows_read += 1
@@ -289,15 +339,15 @@ class DocumentRepository:
         relative_path: str,
         *,
         start_row: int = 1,
-        max_rows: int = 50,
-        max_characters: int = 12_000,
+        max_rows: int | None = None,
+        max_characters: int | None = None,
     ) -> dict[str, Any]:
         if start_row < 1:
             raise ValueError("start_row must be at least 1")
-        if not 1 <= max_rows <= 200:
-            raise ValueError("max_rows must be between 1 and 200")
-        if not 1_000 <= max_characters <= 20_000:
-            raise ValueError("max_characters must be between 1000 and 20000")
+        if max_rows is not None and max_rows < 1:
+            raise ValueError("max_rows must be at least 1")
+        if max_characters is not None and max_characters < 1:
+            raise ValueError("max_characters must be at least 1")
 
         path, normalized = self.resolve(relative_path, expected_suffixes={".csv"})
         encoding, dialect = self._csv_format(path)
@@ -307,21 +357,25 @@ class DocumentRepository:
         total_columns = 0
         rows_read = 0
         content_truncated = False
-        end_row = start_row + max_rows - 1
+        end_row = None if max_rows is None else start_row + max_rows - 1
         with path.open("r", encoding=encoding, newline="") as source:
             for row_number, values in enumerate(csv.reader(source, dialect), start=1):
                 total_rows = row_number
                 total_columns = max(total_columns, len(values))
-                if row_number < start_row or row_number > end_row or content_truncated:
+                outside_window = row_number < start_row or (
+                    end_row is not None and row_number > end_row
+                )
+                if outside_window or content_truncated:
                     continue
                 rendered = "\t".join(self._render_cell(value) for value in values).rstrip()
                 line = f"[linha {row_number}] {rendered}\n"
-                remaining = max_characters - characters
-                if len(line) > remaining:
-                    lines.append(line[:remaining])
-                    content_truncated = True
-                    rows_read += 1
-                    continue
+                if max_characters is not None:
+                    remaining = max_characters - characters
+                    if len(line) > remaining:
+                        lines.append(line[:remaining])
+                        content_truncated = True
+                        rows_read += 1
+                        continue
                 lines.append(line)
                 characters += len(line)
                 rows_read += 1
@@ -340,7 +394,8 @@ class DocumentRepository:
             "total_rows": total_rows,
             "total_columns": total_columns,
             "content": content,
-            "truncated": content_truncated or end_row < total_rows,
+            "truncated": content_truncated
+            or (end_row is not None and end_row < total_rows),
         }
 
     @staticmethod

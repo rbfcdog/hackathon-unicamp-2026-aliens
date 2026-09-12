@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import BinaryIO
 
 from langchain_openai import ChatOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.documents import DocumentRepository, ProcessDataRepository
@@ -19,9 +20,12 @@ from app.schemas.judge import (
     JudgeMLInputs,
     JudgeReviewRequest,
     JudgeReviewResponse,
+    NewCaseData,
     ProcessDataRecord,
     ProcessDataReference,
 )
+from app.schemas.processes import LegalProcessResponse
+from app.services.processes import legal_process_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,8 @@ def get_compiled_judge_graph():
         model=settings.openai_model,
         api_key=settings.openai_api_key,
         temperature=0,
+        use_responses_api=True,
+        output_version="responses/v1",
     )
     agent_model = model.bind_tools(JUDGE_TOOLS, parallel_tool_calls=True)
     decision_model = model.with_structured_output(JudgeDecision, method="json_schema")
@@ -136,7 +142,11 @@ class JudgeService:
             evidence=evidence,
         )
 
-    async def review(self, request: JudgeReviewRequest) -> JudgeReviewResponse:
+    async def review(
+        self,
+        session: AsyncSession,
+        request: JudgeReviewRequest,
+    ) -> JudgeReviewResponse:
         settings = get_settings()
 
         repository = DocumentRepository(settings.document_root)
@@ -155,7 +165,32 @@ class JudgeService:
             else None
         )
         process_payload = process_data.model_dump(mode="json") if process_data else None
+        persisted = await legal_process_service.get_by_case_number(session, request.case_number)
+        persisted_payload = (
+            LegalProcessResponse.model_validate(persisted).model_dump(mode="json")
+            if persisted
+            else None
+        )
+        if persisted and process_data is None:
+            normalized_request = normalized_request.model_copy(
+                update={
+                    "new_case_data": NewCaseData(
+                        state=persisted.state,
+                        sub_subject=persisted.sub_subject,
+                        claim_amount=float(persisted.claim_amount),
+                    )
+                }
+            )
+        if process_data is None and normalized_request.new_case_data is None:
+            raise ValueError("Process context was not found in the database")
         model_inputs = self._resolve_model_inputs(normalized_request, process_data)
+        prompt_context = {
+            "persisted_process": persisted_payload,
+            "workbook_data": process_payload,
+        }
+        # The LLM/tool loop can run for minutes. Release the read-only transaction
+        # before it starts so the request does not pin an idle database connection.
+        await session.rollback()
 
         trace_id = uuid.uuid4()
         case_reference = hashlib.sha256(request.case_number.encode()).hexdigest()[:16]
@@ -171,7 +206,7 @@ class JudgeService:
                         document.path: document.document_type for document in normalized_documents
                     },
                     "model_inputs": model_inputs.model_dump(mode="json"),
-                    "messages": [build_judge_prompt(normalized_request, process_payload)],
+                    "messages": [build_judge_prompt(normalized_request, prompt_context)],
                 },
                 config={
                     "run_id": trace_id,
@@ -182,6 +217,7 @@ class JudgeService:
                         "document_count": len(normalized_paths),
                         "model": settings.openai_model,
                         "has_process_data": process_data is not None,
+                        "has_persisted_process": persisted is not None,
                     },
                     "recursion_limit": 100,
                 },

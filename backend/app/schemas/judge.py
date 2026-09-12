@@ -59,8 +59,8 @@ class JudgeReviewRequest(BaseModel):
         paths = [document.path for document in self.documents]
         if len(set(paths)) != len(paths):
             raise ValueError("documents must not contain duplicate paths")
-        if (self.process_data_reference is None) == (self.new_case_data is None):
-            raise ValueError("Provide exactly one of process_data_reference or new_case_data")
+        if self.process_data_reference is not None and self.new_case_data is not None:
+            raise ValueError("Provide at most one of process_data_reference or new_case_data")
         if self.process_data_reference is None:
             return self
         case_digits = "".join(character for character in self.case_number if character.isdigit())

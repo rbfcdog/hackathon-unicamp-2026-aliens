@@ -9,9 +9,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/v1"
     database_url: str = "postgresql+asyncpg://enter-os:enter-os@localhost:5432/EnterOS"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:3000"
     openai_api_key: str = Field(min_length=1)
     openai_model: str = "gpt-5.4-mini"
+    openai_chat_model: str = "gpt-5.4-mini"
     model_artifact_path: str = "artifacts/judicial-risk-v5.joblib"
     document_root: str = "../data"
     langsmith_tracing: bool = False

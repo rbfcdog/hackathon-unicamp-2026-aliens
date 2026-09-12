@@ -23,7 +23,7 @@ def _execute_document_read(
         )
         allowed_paths = set(state["allowed_document_paths"])
         if normalized not in allowed_paths:
-            raise ValueError("Document was not supplied for this judge review")
+            raise ValueError("Document was not supplied for this process interaction")
         payload = operation(repository, normalized)
     except Exception as exc:
         payload = {
@@ -37,21 +37,15 @@ def _execute_document_read(
 @tool
 def read_pdf_document(
     document_path: str,
-    start_page: int = 1,
-    max_pages: int = 5,
     *,
     runtime: ToolRuntime,
 ) -> str:
-    """Read text from an allowed PDF, with 1-based page pagination and source markers."""
+    """Read an allowed PDF completely with hybrid OCR and page source markers."""
     return _execute_document_read(
         document_path,
         runtime,
         {".pdf"},
-        lambda repository, normalized: repository.read_pdf(
-            normalized,
-            start_page=start_page,
-            max_pages=max_pages,
-        ),
+        lambda repository, normalized: repository.read_pdf(normalized),
     )
 
 
@@ -59,12 +53,10 @@ def read_pdf_document(
 def read_spreadsheet_document(
     document_path: str,
     sheet_name: str | None = None,
-    start_row: int = 1,
-    max_rows: int = 50,
     *,
     runtime: ToolRuntime,
 ) -> str:
-    """Read rows from an allowed XLSX or XLSM workbook, with sheet and row pagination."""
+    """Read an allowed spreadsheet sheet completely with row source markers."""
     return _execute_document_read(
         document_path,
         runtime,
@@ -72,8 +64,6 @@ def read_spreadsheet_document(
         lambda repository, normalized: repository.read_spreadsheet(
             normalized,
             sheet_name=sheet_name,
-            start_row=start_row,
-            max_rows=max_rows,
         ),
     )
 
@@ -81,21 +71,15 @@ def read_spreadsheet_document(
 @tool
 def read_csv_document(
     document_path: str,
-    start_row: int = 1,
-    max_rows: int = 50,
     *,
     runtime: ToolRuntime,
 ) -> str:
-    """Read rows from an allowed CSV file, with row pagination and source markers."""
+    """Read an allowed CSV completely with row source markers."""
     return _execute_document_read(
         document_path,
         runtime,
         {".csv"},
-        lambda repository, normalized: repository.read_csv(
-            normalized,
-            start_row=start_row,
-            max_rows=max_rows,
-        ),
+        lambda repository, normalized: repository.read_csv(normalized),
     )
 
 

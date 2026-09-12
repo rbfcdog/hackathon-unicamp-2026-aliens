@@ -15,15 +15,97 @@ export type DocumentReference = {
   document_type: DocumentType;
 };
 
-export type DocumentCatalogItem = {
-  path: string;
-  kind: "pdf" | "spreadsheet" | "csv";
-  size_bytes: number;
+
+export type LegalProcess = {
+  id: string;
+  case_number: string;
+  title: string;
+  location: string;
+  state: string;
+  subject: string;
+  sub_subject: "fraud" | "generic";
+  claim_amount: number;
+  evidence: EvidenceInput;
+  default_question: string;
+  is_draft: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
-export type DocumentCatalogResponse = {
-  document_root: string;
-  documents: DocumentCatalogItem[];
+export type ProcessDocument = {
+  id: string | null;
+  case_number: string;
+  path: string;
+  original_filename: string;
+  document_type: DocumentType;
+  kind: "pdf" | "csv";
+  source: "bundled" | "upload";
+  size_bytes: number;
+  sha256: string | null;
+  created_at: string | null;
+};
+
+export type ProcessDocumentListResponse = {
+  case_number: string;
+  documents: ProcessDocument[];
+};
+
+export type ChatSession = {
+  id: string;
+  case_number: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  document_paths: string[];
+  trace_id: string | null;
+  created_at: string;
+};
+
+export type ChatHistoryResponse = {
+  session: ChatSession;
+  messages: ChatMessage[];
+};
+
+export type ChatStreamEvent =
+  | {
+      event: "ready";
+      data: { chat_id: string; trace_id: string; document_count: number };
+    }
+  | {
+      event: "tool_start";
+      data: { tool: string; document_path: string };
+    }
+  | {
+      event: "tool_end";
+      data: { tool: string; document_path: string; status: string };
+    }
+  | { event: "token"; data: { text: string } }
+  | {
+      event: "complete";
+      data: {
+        message: ChatMessage;
+        consulted_documents: string[];
+        unreadable_documents: string[];
+      };
+    }
+  | { event: "error"; data: { message: string; trace_id: string } };
+
+export type ProcessDataRecord = {
+  workbook_path: string;
+  process_number: string;
+  state: string;
+  subject: string;
+  sub_subject: "fraud" | "generic";
+  claim_amount: number;
+  evidence: EvidenceInput;
+  source_rows: Record<string, number>;
+  excluded_post_outcome_columns: string[];
 };
 
 export type AgreementRange = {

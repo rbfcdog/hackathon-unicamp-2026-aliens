@@ -21,7 +21,7 @@ if [[ -n "${1:-}" && "${1}" != "--check" ]]; then
   exit 2
 fi
 
-for required_command in docker npm; do
+for required_command in curl docker npm; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
     printf 'Required command not found: %s\n' "${required_command}" >&2
     exit 1
@@ -88,8 +88,29 @@ printf 'Swagger:  http://localhost:8000/docs\n\n'
 docker compose \
   --env-file "${BACKEND_DIR}/.env" \
   -f "${COMPOSE_FILE}" \
-  up --build &
+  up --build --force-recreate &
 backend_pid=$!
+
+printf 'Waiting for the backend readiness endpoint...\n'
+backend_ready=false
+for _attempt in {1..120}; do
+  if curl --fail --silent --show-error http://localhost:8000/ready >/dev/null 2>&1; then
+    backend_ready=true
+    break
+  fi
+  if ! kill -0 "${backend_pid}" 2>/dev/null; then
+    printf 'The backend stopped before becoming ready.\n' >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+if [[ "${backend_ready}" != true ]]; then
+  printf 'The backend did not become ready within 120 seconds.\n' >&2
+  exit 1
+fi
+
+printf 'Backend ready. Starting the frontend...\n'
 
 npm --prefix "${FRONTEND_DIR}" run dev &
 frontend_pid=$!

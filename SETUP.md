@@ -401,6 +401,73 @@ para dados reais. O passo a passo completo de visualização em tempo real está
 de região, workspace e o roadmap da experiência do advogado estão em
 [`docs/roadmap-experiencia-advogado-e-langsmith.md`](docs/roadmap-experiencia-advogado-e-langsmith.md).
 
+## Chat documental por processo
+
+O chat é um módulo separado do analyzer. Ele não executa o ensemble, não altera a recomendação
+de acordo/defesa e não reutiliza documentos de outro processo. O backend resolve a lista
+autorizada pelo `case_number` antes de iniciar o grafo e as ferramentas rejeitam qualquer
+caminho fora dessa lista.
+
+Fluxo pela interface:
+
+1. selecione um processo;
+2. abra **Área de trabalho**;
+3. selecione a aba **Assistente**;
+4. anexe PDFs ou CSVs em **Documentos do processo**;
+5. envie a pergunta. A trilha abaixo da conversa mostra conexão, leituras e falhas, sem expor
+   cadeia de pensamento.
+
+Endpoints:
+
+| Método | Caminho | Função |
+|---|---|---|
+| `GET` | `/v1/processes/{case_number}/documents` | lista documentos vinculados e arquivos do acervo do caso |
+| `POST` | `/v1/processes/{case_number}/documents` | anexa PDF/CSV com `multipart/form-data` |
+| `DELETE` | `/v1/processes/{case_number}/documents/{document_id}` | remove somente upload gerenciado |
+| `POST` | `/v1/processes/{case_number}/chats` | cria uma conversa persistente |
+| `GET` | `/v1/processes/{case_number}/chats` | lista conversas do processo |
+| `GET` | `/v1/processes/{case_number}/chats/{chat_id}` | recupera histórico persistido |
+| `POST` | `/v1/processes/{case_number}/chats/{chat_id}/messages/stream` | envia mensagem e recebe SSE |
+
+Exemplo completo:
+
+```bash
+CASE='0801234-56.2024.8.10.0001'
+
+curl -X POST "http://localhost:8000/v1/processes/$CASE/documents" \
+  -F 'document_type=contract' \
+  -F 'file=@/caminho/para/contrato.pdf'
+
+CHAT_ID="$(
+  curl -s -X POST "http://localhost:8000/v1/processes/$CASE/chats" |
+  python -c 'import json,sys; print(json.load(sys.stdin)["id"])'
+)"
+
+curl -N -X POST \
+  "http://localhost:8000/v1/processes/$CASE/chats/$CHAT_ID/messages/stream" \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Qual é o valor da causa e onde ele aparece?"}'
+```
+
+O stream emite:
+
+- `ready`: conversa, trace e quantidade de documentos no escopo;
+- `tool_start` / `tool_end`: ferramenta, caminho consultado e status;
+- `token`: fragmento incremental da resposta final;
+- `complete`: mensagem persistida, fontes consultadas e documentos ilegíveis;
+- `error`: falha sanitizada e `trace_id` para correlação.
+
+O harness limita o loop a 12 turnos de agente, exige ao menos uma leitura documental antes da
+resposta, envia heartbeat SSE durante períodos ociosos e cancela o produtor quando o cliente
+desconecta. Uploads são validados, limitados a 20 MiB, deduplicados por SHA-256 por processo e
+limitados a 50 arquivos. PDFs criptografados, CSVs vazios, travessia de diretório e leitura
+cruzada entre processos são rejeitados.
+
+Com tracing ativo, o LangSmith registra a execução com `run_name=process-document-chat`, tag
+`process-chat` e o mesmo `trace_id` retornado no evento `ready`. O número bruto do processo não
+é enviado nos metadados; é usado um hash curto.
+
 ## Verificação
 
 Com o PostgreSQL ativo:

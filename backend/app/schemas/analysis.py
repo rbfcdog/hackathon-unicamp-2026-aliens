@@ -64,7 +64,7 @@ class ResolvedAnalysisInput(BaseModel):
         "documents",
         "request_fields_and_documents",
     ]
-    document_summary: str = Field(default="", max_length=8_000)
+    document_summary: str = ""
 
 
 class AnalysisResult(BaseModel):

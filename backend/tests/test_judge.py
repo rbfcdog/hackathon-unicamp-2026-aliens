@@ -45,12 +45,16 @@ def test_openai_key_is_required() -> None:
 def test_repository_reads_supplied_pdf_and_workbook_and_blocks_escape() -> None:
     repository = DocumentRepository("../data")
 
-    pdf = repository.read_pdf(PDF_PATH, max_pages=1)
+    pdf = repository.read_pdf(PDF_PATH)
     workbook = repository.read_spreadsheet(WORKBOOK_PATH, max_rows=3)
 
     assert pdf["status"] == "ok"
     assert pdf["total_pages"] == 8
     assert "--- página 1 ---" in pdf["content"]
+    assert pdf["end_page"] == 8
+    assert pdf["truncated"] is False
+    assert pdf["extraction_engine"] == "pymupdf4llm"
+    assert pdf["ocr_mode"] == "select_keep_old"
     assert workbook["status"] == "ok"
     assert workbook["sheet_name"] == "Resultados dos processos"
     assert workbook["total_rows"] == 60_001
@@ -63,6 +67,10 @@ def test_repository_reads_supplied_pdf_and_workbook_and_blocks_escape() -> None:
 def test_tool_schemas_do_not_expose_runtime_state() -> None:
     for document_tool in DOCUMENT_TOOLS:
         assert "runtime" not in document_tool.args
+        assert "start_page" not in document_tool.args
+        assert "max_pages" not in document_tool.args
+        assert "start_row" not in document_tool.args
+        assert "max_rows" not in document_tool.args
 
 
 def test_ml_tools_return_versioned_prediction_and_model_card() -> None:
@@ -249,8 +257,7 @@ async def test_judge_reference_endpoints_list_documents_and_process_data() -> No
 async def test_uploaded_pdf_and_csv_are_stored_and_invalid_pdf_is_rejected() -> None:
     source_bytes = (Path("../data") / PDF_PATH).read_bytes()
     csv_bytes = (
-        b"case_number,state,sub_subject,claim_amount,contract\n"
-        b"CSV-CASE-1,MG,fraud,12500,true\n"
+        b"case_number,state,sub_subject,claim_amount,contract\nCSV-CASE-1,MG,fraud,12500,true\n"
     )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

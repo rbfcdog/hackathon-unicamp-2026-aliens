@@ -1,257 +1,158 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import {
-  Activity,
-  ArrowRight,
-  BriefcaseBusiness,
-  Command,
-  FilePlus2,
-  Gauge,
-  HelpCircle,
-  LayoutDashboard,
-  Menu,
-  Search,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { AnalysisResultPanel } from "@/components/analysis-result";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, FilePlus2, Menu, Search, X } from "lucide-react";
 import { CaseWorkspace } from "@/components/case-workspace";
-import { NewAnalysisDialog } from "@/components/new-analysis-dialog";
 import { apiFetch } from "@/lib/api";
-import {
-  DEMO_CASES,
-  documentTypeFromPath,
-  documentsForCase,
-  type DemoCase,
-} from "@/lib/demo-cases";
-import type {
-  AnalysisRequest,
-  AnalysisResponse,
-  DocumentCatalogResponse,
-  ReviewResponse,
-} from "@/lib/types";
+import type { LegalProcess } from "@/lib/types";
 
-type BusyState = "catalog" | "analysis" | "review" | null;
+type BusyState = "processes" | "draft" | null;
+
+function mergeProcessSnapshots(
+  current: LegalProcess[],
+  incoming: LegalProcess[],
+): LegalProcess[] {
+  const incomingIds = new Set(incoming.map((legalProcess) => legalProcess.id));
+  return [
+    ...incoming,
+    ...current.filter((legalProcess) => !incomingIds.has(legalProcess.id)),
+  ];
+}
 
 export default function Home() {
-  const [catalog, setCatalog] = useState<DocumentCatalogResponse | null>(null);
-  const [selectedCase, setSelectedCase] = useState<DemoCase | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
-  const [review, setReview] = useState<ReviewResponse | null>(null);
-  const [busy, setBusy] = useState<BusyState>("catalog");
+  const [processes, setProcesses] = useState<LegalProcess[]>([]);
+  const [selectedProcess, setSelectedProcess] = useState<LegalProcess | null>(null);
+  const [draftProcess, setDraftProcess] = useState<LegalProcess | null>(null);
+  const [busy, setBusy] = useState<BusyState>("processes");
   const [error, setError] = useState<string | null>(null);
-  const [apiOnline, setApiOnline] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [connectionRevision, setConnectionRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
+    let inFlight = false;
 
-    Promise.all([
-      apiFetch<DocumentCatalogResponse>("/v1/documents"),
-      apiFetch<{ status: string }>("/ready"),
-    ])
-      .then(([documentCatalog, health]) => {
+    async function syncApi(showLoading: boolean) {
+      if (inFlight) return;
+      inFlight = true;
+      if (showLoading) setBusy("processes");
+
+      try {
+        const [fetchedProcesses, health] = await Promise.all([
+          apiFetch<LegalProcess[]>("/v1/processes"),
+          apiFetch<{ status: string }>("/ready"),
+        ]);
         if (!active) return;
-        setCatalog(documentCatalog);
-        setApiOnline(health.status === "ok");
-      })
-      .catch((caught: unknown) => {
+        if (health.status !== "ok") throw new Error("A API ainda não está pronta.");
+        let persistedProcesses = fetchedProcesses;
+        const existingDraft = persistedProcesses.find(
+          (legalProcess) => legalProcess.is_draft,
+        );
+        if (!existingDraft) {
+          try {
+            const draft = await apiFetch<LegalProcess>("/v1/processes/drafts", {
+              method: "POST",
+            });
+            if (!active) return;
+            persistedProcesses = [draft, ...persistedProcesses];
+          } catch {
+            if (!active) return;
+            setProcesses((current) =>
+              mergeProcessSnapshots(current, persistedProcesses),
+            );
+            setDraftProcess(null);
+            setConnectionError(null);
+            setError("Não foi possível abrir uma nova conversa.");
+            return;
+          }
+        }
+        setProcesses((current) => mergeProcessSnapshots(current, persistedProcesses));
+        setDraftProcess(
+          persistedProcesses.find((legalProcess) => legalProcess.is_draft) ?? null,
+        );
+        setSelectedProcess((current) => {
+          if (!current) return current;
+          return (
+            persistedProcesses.find((legalProcess) => legalProcess.id === current.id) ??
+            current
+          );
+        });
+        setConnectionError(null);
+        setError(null);
+      } catch (caught: unknown) {
         if (!active) return;
-        setError(
+        setConnectionError(
           caught instanceof Error
             ? caught.message
             : "Não foi possível consultar a API.",
         );
-      })
-      .finally(() => {
-        if (active) setBusy(null);
-      });
+      } finally {
+        inFlight = false;
+        if (active && showLoading) {
+          setBusy((current) => (current === "processes" ? null : current));
+        }
+      }
+    }
+
+    void syncApi(true);
+    const retryTimer = window.setInterval(() => {
+      void syncApi(false);
+    }, 5_000);
 
     return () => {
       active = false;
+      window.clearInterval(retryTimer);
     };
+  }, [connectionRevision]);
+
+  const createDraftProcess = useCallback(async () => {
+    setBusy("draft");
+    setError(null);
+    try {
+      const draft = await apiFetch<LegalProcess>("/v1/processes/drafts", {
+        method: "POST",
+      });
+      setDraftProcess(draft);
+      setProcesses((current) => mergeProcessSnapshots(current, [draft]));
+      setSelectedProcess(draft);
+    } catch {
+      setError("Não foi possível abrir uma nova conversa.");
+    } finally {
+      setBusy(null);
+    }
   }, []);
 
-  const caseDocuments = useMemo(() => {
-    if (!catalog || !selectedCase) return [];
-    return documentsForCase(catalog.documents, selectedCase);
-  }, [catalog, selectedCase]);
 
-  const loadedCases = catalog
-    ? DEMO_CASES.filter(
-        (demoCase) => documentsForCase(catalog.documents, demoCase).length > 0,
+  const normalizedFilter = query.trim().toLowerCase();
+  const filteredProcesses = normalizedFilter
+    ? processes.filter(
+        (legalProcess) =>
+          legalProcess.case_number.toLowerCase().includes(normalizedFilter) ||
+          legalProcess.title.toLowerCase().includes(normalizedFilter),
       )
-    : [];
+    : processes;
+  const activeProcess = selectedProcess ?? draftProcess;
 
-  async function createAnalysis(payload: AnalysisRequest) {
-    setBusy("analysis");
-    setError(null);
-    setAnalysis(null);
-    setSelectedCase(null);
-
-    try {
-      const response = await apiFetch<AnalysisResponse>("/v1/analyses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      setAnalysis(response);
-      setDialogOpen(false);
-    } catch (caught: unknown) {
-      setError(
-        caught instanceof Error ? caught.message : "A análise não foi concluída.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runDocumentReview(question: string) {
-    if (!selectedCase) return;
-
-    setBusy("review");
-    setError(null);
-    setReview(null);
-
-    try {
-      const response = await apiFetch<ReviewResponse>("/v1/judge/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          case_number: selectedCase.caseNumber,
-          question,
-          documents: caseDocuments.map((document) => ({
-            path: document.path,
-            document_type: documentTypeFromPath(document.path),
-          })),
-          new_case_data: {
-            state: selectedCase.state,
-            sub_subject: selectedCase.subSubject,
-            claim_amount: selectedCase.claimAmount,
-          },
-        }),
-      });
-      setReview(response);
-    } catch (caught: unknown) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "A revisão documental não foi concluída.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function chooseCase(demoCase: DemoCase) {
-    setSelectedCase(demoCase);
-    setReview(null);
-    setAnalysis(null);
+  function chooseProcess(legalProcess: LegalProcess) {
+    setSelectedProcess(legalProcess);
     setError(null);
     setMobileNavOpen(false);
   }
 
-  function handleCommand(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      setDialogOpen(true);
-      return;
-    }
-
-    const match = DEMO_CASES.find(
-      (demoCase) =>
-        demoCase.caseNumber.toLowerCase().includes(normalizedQuery) ||
-        demoCase.title.toLowerCase().includes(normalizedQuery) ||
-        demoCase.id.includes(normalizedQuery.replaceAll(" ", "-")),
-    );
-
-    if (match) {
-      chooseCase(match);
-      setQuery("");
-      return;
-    }
-
-    setError(
-      "Processo não encontrado no catálogo local. Abra uma nova análise para informar os dados.",
-    );
-  }
-
   function returnHome() {
-    setSelectedCase(null);
-    setReview(null);
+    setSelectedProcess(null);
     setError(null);
   }
 
   return (
     <div className="app-shell">
-      <aside className="icon-rail" aria-label="Navegação principal">
-        <button
-          aria-label="Abrir navegação"
-          className="mobile-menu-button"
-          onClick={() => setMobileNavOpen(true)}
-          type="button"
-        >
-          <Menu size={20} />
-        </button>
-        <button
-          aria-label="Visão geral"
-          className="rail-brand"
-          onClick={returnHome}
-          type="button"
-        >
-          <span className="brand-glyph" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-        </button>
-        <nav>
-          <button
-            aria-label="Visão geral"
-            className={!selectedCase ? "rail-action active" : "rail-action"}
-            onClick={returnHome}
-            type="button"
-          >
-            <LayoutDashboard size={19} />
-          </button>
-          <button
-            aria-label="Novo processo"
-            className="rail-action"
-            onClick={() => setDialogOpen(true)}
-            type="button"
-          >
-            <FilePlus2 size={19} />
-          </button>
-          <button
-            aria-label="Indicadores"
-            className="rail-action"
-            onClick={returnHome}
-            type="button"
-          >
-            <Gauge size={19} />
-          </button>
-        </nav>
-        <a
-          aria-label="Abrir documentação da API"
-          className="rail-action rail-help"
-          href="http://localhost:8000/docs"
-          rel="noreferrer"
-          target="_blank"
-        >
-          <HelpCircle size={19} />
-        </a>
-      </aside>
-
       <aside className={mobileNavOpen ? "case-sidebar open" : "case-sidebar"}>
         <div className="sidebar-brand">
-          <div>
-            <strong>ENTER<span>OS</span></strong>
-            <small>Legal intelligence</small>
-          </div>
+          <button className="sidebar-home" onClick={returnHome} type="button">
+            ENTER<span>OS</span>
+          </button>
           <button
             aria-label="Fechar navegação"
             className="sidebar-close"
@@ -265,14 +166,13 @@ export default function Home() {
         <button
           className="new-process-button"
           onClick={() => {
-            setDialogOpen(true);
+            void createDraftProcess();
             setMobileNavOpen(false);
           }}
           type="button"
         >
           <FilePlus2 size={17} />
           Novo processo
-          <span>⌘ N</span>
         </button>
 
         <label className="sidebar-search">
@@ -286,39 +186,32 @@ export default function Home() {
         </label>
 
         <div className="sidebar-section">
-          <div className="sidebar-section-heading">
-            <span>Processos recentes</span>
-            <b>{String(loadedCases.length).padStart(2, "0")}</b>
-          </div>
+          <div className="sidebar-section-heading">Processos</div>
           <div className="case-list">
-            {DEMO_CASES.map((demoCase) => (
+            {filteredProcesses.map((legalProcess) => (
               <button
                 className={
-                  selectedCase?.id === demoCase.id
+                  activeProcess?.id === legalProcess.id
                     ? "case-list-item selected"
                     : "case-list-item"
                 }
-                key={demoCase.id}
-                onClick={() => chooseCase(demoCase)}
+                key={legalProcess.id}
+                onClick={() => chooseProcess(legalProcess)}
                 type="button"
               >
-                <span className="case-list-marker" />
                 <span>
-                  <strong>{demoCase.title}</strong>
-                  <small>{demoCase.caseNumber}</small>
+                  <strong>{legalProcess.title}</strong>
+                  <small>
+                    {legalProcess.is_draft ? "Sem informações" : legalProcess.case_number}
+                  </small>
                 </span>
                 <ArrowRight size={15} />
               </button>
             ))}
+            {!filteredProcesses.length && busy !== "processes" && (
+              <p className="empty-case-list">Nenhum processo disponível.</p>
+            )}
           </div>
-        </div>
-
-        <div className="sidebar-footnote">
-          <ShieldCheck size={15} />
-          <span>
-            Política determinística
-            <small>decision-tree-2026-09-12</small>
-          </span>
         </div>
       </aside>
 
@@ -332,117 +225,67 @@ export default function Home() {
       )}
 
       <main className="main-canvas">
-        <header className="topbar">
-          <div className="breadcrumb">
-            <BriefcaseBusiness size={16} />
-            <span>Operação jurídica</span>
-            <i>/</i>
-            <strong>{selectedCase ? selectedCase.title : "Visão geral"}</strong>
-          </div>
-          <div className="api-status">
-            <span className={apiOnline ? "status-dot online" : "status-dot"} />
-            <div>
-              <small>API FastAPI</small>
-              <strong>{apiOnline ? "Operacional" : busy === "catalog" ? "Conectando" : "Indisponível"}</strong>
-            </div>
-          </div>
-        </header>
+        <button
+          aria-label="Abrir navegação"
+          className="mobile-menu-button"
+          onClick={() => setMobileNavOpen(true)}
+          type="button"
+        >
+          <Menu size={20} />
+        </button>
 
         <div className="canvas-content">
-          {selectedCase ? (
+          {activeProcess ? (
             <CaseWorkspace
-              demoCase={selectedCase}
-              documents={caseDocuments}
-              error={error}
-              loading={busy === "review"}
+              key={activeProcess.id}
+              legalProcess={activeProcess}
               onBack={returnHome}
-              onRunReview={runDocumentReview}
-              review={review}
             />
           ) : (
-            <section className="overview">
-              <div className="overview-stat">
-                <Activity size={16} />
-                <span>Processos ativos</span>
-                <strong>{String(loadedCases.length).padStart(2, "0")}</strong>
-              </div>
-
-              <div className="welcome-block">
-                <span className="section-kicker">Workspace do advogado</span>
-                <h1>
-                  Olá. Qual processo
-                  <br />
-                  vamos avaliar hoje?
-                </h1>
-                <p>
-                  Consulte os casos de demonstração ou inicie uma análise com a
-                  política de acordos vigente.
-                </p>
-
-                <form className="command-bar" onSubmit={handleCommand}>
-                  <Command size={19} />
-                  <input
-                    aria-label="Buscar processo ou iniciar análise"
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Digite 01, 02 ou um número de processo"
-                    value={query}
-                  />
-                  <kbd>Enter</kbd>
-                  <button aria-label="Executar comando" type="submit">
-                    <ArrowRight size={17} />
+            <section className="draft-chat-loading" aria-live="polite">
+              {busy === "draft" || busy === "processes" ? (
+                <>
+                  <span className="spinner" /> Abrindo nova conversa
+                </>
+              ) : (
+                <>
+                  <p>
+                    {connectionError ??
+                      error ??
+                      "Não foi possível abrir uma nova conversa."}
+                  </p>
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      if (connectionError) {
+                        setConnectionRevision((current) => current + 1);
+                        return;
+                      }
+                      void createDraftProcess();
+                    }}
+                    type="button"
+                  >
+                    Tentar novamente
                   </button>
-                </form>
-
-                <div className="quick-actions">
-                  <span>Acessos rápidos</span>
-                  <div>
-                    {DEMO_CASES.map((demoCase) => (
-                      <button
-                        className="document-chip"
-                        key={demoCase.id}
-                        onClick={() => chooseCase(demoCase)}
-                        type="button"
-                      >
-                        <BriefcaseBusiness size={16} />
-                        <span>
-                          <small>{demoCase.eyebrow}</small>
-                          {demoCase.title}
-                        </span>
-                      </button>
-                    ))}
-                    <button
-                      className="document-chip accent"
-                      onClick={() => setDialogOpen(true)}
-                      type="button"
-                    >
-                      <FilePlus2 size={16} />
-                      <span>
-                        <small>Dados estruturados</small>
-                        Nova análise
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {error && <div className="inline-error overview-error" role="alert">{error}</div>}
-              {busy === "catalog" && (
-                <div className="catalog-loading">
-                  <span className="spinner" /> Sincronizando catálogo documental
-                </div>
+                </>
               )}
-              {analysis && <AnalysisResultPanel analysis={analysis} />}
             </section>
+          )}
+
+          {connectionError && activeProcess && (
+            <div className="connection-error" role="alert">
+              <span>{connectionError}</span>
+              <button
+                disabled={busy !== null}
+                onClick={() => setConnectionRevision((current) => current + 1)}
+                type="button"
+              >
+                Tentar novamente
+              </button>
+            </div>
           )}
         </div>
       </main>
-
-      <NewAnalysisDialog
-        loading={busy === "analysis"}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={createAnalysis}
-        open={dialogOpen}
-      />
     </div>
   );
 }

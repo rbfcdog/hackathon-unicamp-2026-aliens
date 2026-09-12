@@ -1,8 +1,10 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_session
 from app.schemas.documents import EvidenceDocumentType, UploadedDocumentResponse
 from app.schemas.judge import (
     DocumentCatalogResponse,
@@ -14,6 +16,7 @@ from app.schemas.judge import (
 from app.services.judge import JudgeExecutionError, JudgeOutputError, judge_service
 
 router = APIRouter()
+SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("/documents", response_model=DocumentCatalogResponse, tags=["documents"])
@@ -85,9 +88,12 @@ def get_process_data(
 
 
 @router.post("/judge/reviews", response_model=JudgeReviewResponse, tags=["judge"])
-async def create_judge_review(payload: JudgeReviewRequest) -> JudgeReviewResponse:
+async def create_judge_review(
+    payload: JudgeReviewRequest,
+    session: SessionDependency,
+) -> JudgeReviewResponse:
     try:
-        return await judge_service.review(payload)
+        return await judge_service.review(session, payload)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

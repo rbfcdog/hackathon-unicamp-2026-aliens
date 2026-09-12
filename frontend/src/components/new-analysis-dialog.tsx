@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { FilePlus2, ShieldCheck, X } from "lucide-react";
+import { ShieldCheck, X } from "lucide-react";
 import type { AnalysisRequest, EvidenceInput, EvidenceKey } from "@/lib/types";
 
 const EMPTY_EVIDENCE: EvidenceInput = {
@@ -76,13 +76,7 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="dialog-heading">
-          <div className="dialog-icon" aria-hidden="true">
-            <FilePlus2 size={20} />
-          </div>
-          <div>
-            <span className="section-kicker">Nova análise</span>
-            <h2 id="new-analysis-title">Abrir processo</h2>
-          </div>
+          <h2 id="new-analysis-title">Novo processo</h2>
           <button
             aria-label="Fechar formulário"
             className="icon-button"
@@ -168,10 +162,9 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
           </fieldset>
 
           <div className="dialog-actions field-wide">
-            <p>A política calcula a estratégia; o LLM apenas explica a decisão.</p>
             <button className="primary-button" disabled={loading} type="submit">
               {loading ? <span className="spinner" /> : <ShieldCheck size={17} />}
-              {loading ? "Calculando análise" : "Calcular estratégia"}
+              {loading ? "Criando processo" : "Criar e analisar"}
             </button>
           </div>
         </form>

@@ -4,6 +4,13 @@ FROM python:3.12-slim
 COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-por \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
