@@ -63,3 +63,4 @@ class ChatHistoryResponse(BaseModel):
 
 class ChatStreamRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
+    analysis_review_mode: Literal["standard", "agreement_justification"] = "standard"

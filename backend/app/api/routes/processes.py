@@ -86,7 +86,7 @@ async def infer_process_title(
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI could not infer a process name",
+            detail="Não foi possível sugerir o nome do processo",
         ) from exc
     return LegalProcessResponse.model_validate(process)
 

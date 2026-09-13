@@ -1,14 +1,53 @@
+import json
 import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import app.api.routes.bank as bank_routes
+import app.services.bank as bank_module
 import app.services.processes as processes_module
 from app.db.models import LegalProcess
 from app.db.session import SessionFactory
 from app.main import app
+from app.schemas.chat import ProcessDocumentListResponse, ProcessDocumentResponse
+from app.schemas.judge import JudgeFinding, JudgeReviewRequest, JudgeReviewResponse
 from app.schemas.processes import InferredProcessTitle
 
+
+@pytest.mark.asyncio
+async def test_judge_review_never_exposes_unexpected_failure_as_http_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unexpected_failure(*_: object) -> JudgeReviewResponse:
+        raise RuntimeError("unexpected judge failure")
+
+    monkeypatch.setattr(
+        bank_routes.bank_dashboard_service,
+        "review_decision",
+        unexpected_failure,
+    )
+    transport = ASGITransport(app=app)
+    decision_id = uuid.uuid4()
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/v1/bank/decisions/{decision_id}/judge-review")
+        stream_response = await client.post(
+            f"/v1/bank/decisions/{decision_id}/judge-review/stream"
+        )
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "Não foi possível concluir a revisão independente. Tente novamente."
+    )
+    assert stream_response.status_code == 200
+    payloads = [
+        json.loads(line.removeprefix("data: "))
+        for line in stream_response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert payloads[0] == {"message": "A revisão independente foi iniciada."}
+    assert payloads[1] == {
+        "message": "Não foi possível concluir a revisão independente. Tente novamente."
+    }
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_process_fields_title_and_submitted_decision_are_persisted(
@@ -22,6 +61,81 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
             return InferredProcessTitle(title="Fraude Bancária no Amazonas")
 
     monkeypatch.setattr(processes_module, "ChatOpenAI", lambda **_: TitleModel())
+    reviewed_requests: list[JudgeReviewRequest] = []
+
+    async def list_process_documents(
+        _: object,
+        case_number: str,
+    ) -> ProcessDocumentListResponse:
+        return ProcessDocumentListResponse(
+            case_number=case_number,
+            documents=[
+                ProcessDocumentResponse(
+                    id=None,
+                    case_number=case_number,
+                    path=f"uploads/{case_number}/autos.pdf",
+                    original_filename="autos.pdf",
+                    document_type="case_record",
+                    kind="pdf",
+                    source="upload",
+                    size_bytes=1,
+                    sha256=None,
+                    created_at=None,
+                ),
+                ProcessDocumentResponse(
+                    id=None,
+                    case_number=case_number,
+                    path=f"uploads/{case_number}/contrato.pdf",
+                    original_filename="contrato.pdf",
+                    document_type="contract",
+                    kind="pdf",
+                    source="upload",
+                    size_bytes=1,
+                    sha256=None,
+                    created_at=None,
+                ),
+            ],
+        )
+
+    async def judge_review(_: object, request: JudgeReviewRequest) -> JudgeReviewResponse:
+        reviewed_requests.append(request)
+        return JudgeReviewResponse(
+            disposition="insufficient_evidence",
+            confidence=0.5,
+            summary="A documentação disponível é insuficiente para confirmar a decisão.",
+            findings=[
+                JudgeFinding(
+                    issue="Validade da decisão",
+                    conclusion="Insuficiência de prova",
+                    reasoning=(
+                        "Os documentos disponíveis foram lidos, mas não sustentam "
+                        "uma conclusão definitiva."
+                    ),
+                )
+            ],
+            missing_evidence=["Extrato bancário completo"],
+            case_number=request.case_number,
+            consulted_documents=[document.path for document in request.documents],
+            unreadable_documents=[],
+            model="test",
+            trace_id=uuid.uuid4(),
+            langsmith_project="test",
+            tracing_enabled=False,
+            ml_analysis=None,
+            ml_tool_errors=[],
+            model_card_consulted=False,
+            strategy=None,
+            document_node_reads={},
+            process_data=None,
+        )
+
+    monkeypatch.setattr(bank_module.process_document_service, "list", list_process_documents)
+    monkeypatch.setattr(
+        processes_module.process_document_service,
+        "list",
+        list_process_documents,
+    )
+    monkeypatch.setattr(bank_module.judge_service, "review", judge_review)
     process_id: uuid.UUID | None = None
     old_case_number: str | None = None
     new_case_number = f"9999999-11.2099.8.04.{str(uuid.uuid4().int)[:4]}"
@@ -34,27 +148,29 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
             draft = draft_response.json()
             process_id = uuid.UUID(draft["id"])
             old_case_number = draft["case_number"]
+            assert "location" not in draft
+            assert "subject" not in draft
 
             draft_overview = await client.get(f"/v1/processes/{old_case_number}/financial-overview")
             assert draft_overview.status_code == 200
             draft_overview_body = draft_overview.json()
-            assert draft_overview_body["evidence_score"] == 0
+            assert draft_overview_body["evidence_score"] == pytest.approx(1 / 6)
             assert draft_overview_body["risk"] is None
             assert draft_overview_body["decision"] is None
+            assert "location" not in draft_overview_body
+            assert "subject" not in draft_overview_body
 
-            blocked_decision = await client.post(
+            draft_decision = await client.post(
                 f"/v1/processes/{old_case_number}/decisions",
                 json={"recommendation": "defense", "amount": None},
             )
-            assert blocked_decision.status_code == 422
+            assert draft_decision.status_code == 201
 
             sentinel_response = await client.patch(
                 f"/v1/processes/{old_case_number}",
                 json={
                     "title": "Fraude Bancária",
-                    "location": "Manaus · AM",
                     "state": "AM",
-                    "subject": "Contratação bancária não reconhecida",
                     "sub_subject": "fraud",
                     "claim_amount": 0.01,
                     "evidence": {
@@ -81,9 +197,7 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
                 json={
                     "case_number": new_case_number,
                     "title": "Novo processo",
-                    "location": "Manaus · AM",
                     "state": "AM",
-                    "subject": "Contratação bancária não reconhecida",
                     "sub_subject": "fraud",
                     "claim_amount": 18000,
                     "evidence": {
@@ -112,14 +226,22 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
             assert partial_overview_response.status_code == 200
             partial_overview = partial_overview_response.json()
             assert partial_overview["evidence_score"] == 0.5
-            assert partial_overview["risk"] is None
-            assert partial_overview["decision"] is None
+            assert partial_overview["risk"] is not None
+            assert partial_overview["decision"] is not None
 
-            blocked_partial_decision = await client.post(
+            partial_recommendation = partial_overview["decision"]["recommendation"]
+            partial_decision = await client.post(
                 f"/v1/processes/{new_case_number}/decisions",
-                json={"recommendation": "defense", "amount": None},
+                json={
+                    "recommendation": partial_recommendation,
+                    "amount": (
+                        partial_overview["decision"]["agreement_range"]["target"]
+                        if partial_recommendation == "agreement"
+                        else None
+                    ),
+                },
             )
-            assert blocked_partial_decision.status_code == 422
+            assert partial_decision.status_code == 201
 
             complete_evidence_response = await client.patch(
                 f"/v1/processes/{new_case_number}",
@@ -203,6 +325,28 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
             )
             assert bank_item["projected_decision_cost"] is None
             assert bank_item["optimized_savings"] is None
+
+            judge_review_response = await client.post(
+                f"/v1/bank/decisions/{decision['id']}/judge-review"
+            )
+            assert judge_review_response.status_code == 200
+            judge_review_body = judge_review_response.json()
+            expected_document_paths = [
+                f"uploads/{new_case_number}/autos.pdf",
+                f"uploads/{new_case_number}/contrato.pdf",
+            ]
+            assert judge_review_body["consulted_documents"] == expected_document_paths
+            assert [document.path for document in reviewed_requests[-1].documents] == (
+                expected_document_paths
+            )
+            assert decision["justification"] in reviewed_requests[-1].question
+            assert '"model_reasoning"' in reviewed_requests[-1].question
+            judge_review_stream_response = await client.post(
+                f"/v1/bank/decisions/{decision['id']}/judge-review/stream"
+            )
+            assert judge_review_stream_response.status_code == 200
+            assert "event: ready" in judge_review_stream_response.text
+            assert "event: complete" in judge_review_stream_response.text
 
             approve_response = await client.post(
                 f"/v1/bank/decisions/{decision['id']}/approve"
@@ -303,9 +447,6 @@ async def test_process_fields_title_and_submitted_decision_are_persisted(
                 defense_approval.json()["projected_outcome"]
                 == expected_defense_outcome
             )
-            assert "probabilidade projetada de êxito" in defense_approval.json()[
-                "projected_outcome_reason"
-            ]
             expected_defense_savings = (
                 historical_condemnation
                 if expected_defense_outcome == "favorable"

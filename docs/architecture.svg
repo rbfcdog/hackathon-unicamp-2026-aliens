@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Arquitetura concisa da solução EnterOS</title>
+  <desc id="desc">Fluxo principal em quatro blocos: experiências, plataforma, núcleo de decisão e dados, com os três fluxos essenciais de chat, análise e governança.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070B11"/>
+      <stop offset="0.55" stop-color="#0B1119"/>
+      <stop offset="1" stop-color="#070A0F"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#142334"/>
+      <stop offset="1" stop-color="#111725"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#9AB0C2" stroke-opacity="0.035"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.38"/>
+    </filter>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#59D4E8"/>
+    </marker>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .mono { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; }
+      .eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 3px; fill: #59D4E8; }
+      .title { font-size: 42px; font-weight: 650; letter-spacing: -1.2px; fill: #F5F8FA; }
+      .subtitle { font-size: 18px; fill: #AAB8C5; }
+      .card-title { font-size: 19px; font-weight: 700; letter-spacing: 1.5px; fill: #EAF1F5; }
+      .card-main { font-size: 25px; font-weight: 650; fill: #FFFFFF; }
+      .body { font-size: 17px; fill: #B8C5CF; }
+      .small { font-size: 14px; fill: #8FA1AF; }
+      .chip { font-size: 14px; font-weight: 650; fill: #DDE8EE; }
+      .flow-title { font-size: 20px; font-weight: 700; fill: #F4F8FA; }
+      .flow-text { font-size: 17px; fill: #B8C5CF; }
+      .flow-output { font-size: 15px; font-weight: 650; fill: #59D4E8; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#grid)"/>
+  <circle cx="850" cy="390" r="420" fill="#337D9A" opacity="0.035"/>
+
+  <!-- Header -->
+  <g class="sans">
+    <text x="60" y="66" class="eyebrow">ENTEROS · VISÃO DE SISTEMA</text>
+    <text x="60" y="119" class="title">Arquitetura da solução</text>
+    <text x="60" y="153" class="subtitle">Da experiência jurídica à decisão bancária, com evidência rastreável.</text>
+  </g>
+
+  <!-- Main flow label -->
+  <g class="sans">
+    <text x="60" y="206" class="small" letter-spacing="2">FLUXO PRINCIPAL</text>
+  </g>
+
+  <!-- Card 1: Experiences -->
+  <g filter="url(#shadow)" class="sans">
+    <rect x="60" y="228" width="300" height="284" rx="22" fill="#101821" stroke="#29404E" stroke-width="1.5"/>
+    <rect x="60" y="228" width="300" height="5" rx="2.5" fill="#59D4E8"/>
+    <circle cx="92" cy="272" r="17" fill="#173443"/>
+    <text x="92" y="278" text-anchor="middle" class="mono chip" fill="#59D4E8">01</text>
+    <text x="120" y="279" class="card-title">EXPERIÊNCIAS</text>
+
+    <text x="88" y="329" class="card-main">Advogado</text>
+    <text x="88" y="357" class="body">Chat, autos e decisão</text>
+    <line x1="88" y1="383" x2="332" y2="383" stroke="#2B3B47"/>
+    <text x="88" y="427" class="card-main">Banco</text>
+    <text x="88" y="455" class="body">Revisão e efetividade</text>
+    <text x="88" y="486" class="small">Documentos e decisões por processo</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <path d="M370 370H398" fill="none" stroke="#59D4E8" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Card 2: Platform -->
+  <g filter="url(#shadow)" class="sans">
+    <rect x="410" y="228" width="280" height="284" rx="22" fill="#101821" stroke="#29404E" stroke-width="1.5"/>
+    <rect x="410" y="228" width="280" height="5" rx="2.5" fill="#59D4E8"/>
+    <circle cx="442" cy="272" r="17" fill="#173443"/>
+    <text x="442" y="278" text-anchor="middle" class="mono chip">02</text>
+    <text x="470" y="279" class="card-title">PLATAFORMA</text>
+
+    <text x="438" y="330" class="card-main">Next.js</text>
+    <text x="438" y="358" class="body">Workspace e painel</text>
+    <rect x="438" y="387" width="224" height="1" fill="#2B3B47"/>
+    <text x="438" y="427" class="card-main">FastAPI</text>
+    <text x="438" y="455" class="body">REST + SSE por tokens</text>
+    <text x="438" y="486" class="small">Proxy /api/backend · upload de arquivos</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <path d="M700 370H728" fill="none" stroke="#59D4E8" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Card 3: Decision core -->
+  <g filter="url(#shadow)" class="sans">
+    <rect x="740" y="214" width="410" height="312" rx="24" fill="url(#core)" stroke="#467184" stroke-width="1.7"/>
+    <rect x="740" y="214" width="410" height="6" rx="3" fill="#59D4E8"/>
+    <circle cx="774" cy="260" r="17" fill="#1A4050"/>
+    <text x="774" y="266" text-anchor="middle" class="mono chip">03</text>
+    <text x="802" y="267" class="card-title">NÚCLEO DE DECISÃO</text>
+
+    <text x="770" y="321" class="card-main">LangGraph + OpenAI</text>
+    <text x="770" y="350" class="body">Chat documental e análise jurídica</text>
+
+    <rect x="770" y="384" width="148" height="37" rx="18.5" fill="#162936" stroke="#315567"/>
+    <text x="844" y="408" text-anchor="middle" class="chip">Ferramentas PDF</text>
+    <rect x="930" y="384" width="190" height="37" rx="18.5" fill="#202039" stroke="#554E82"/>
+    <text x="1025" y="408" text-anchor="middle" class="chip">ML judicial-risk-v5</text>
+
+    <text x="770" y="454" class="body">Política de acordo, defesa e revisão</text>
+    <text x="770" y="480" class="small">Ensemble: regressão logística + XGBoost</text>
+    <text x="770" y="505" class="small">Juiz LLM para auditoria da decisão</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <path d="M1160 370H1188" fill="none" stroke="#59D4E8" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Card 4: Data -->
+  <g filter="url(#shadow)" class="sans">
+    <rect x="1200" y="228" width="340" height="284" rx="22" fill="#101821" stroke="#29404E" stroke-width="1.5"/>
+    <rect x="1200" y="228" width="340" height="5" rx="2.5" fill="#59D4E8"/>
+    <circle cx="1232" cy="272" r="17" fill="#173443"/>
+    <text x="1232" y="278" text-anchor="middle" class="mono chip">04</text>
+    <text x="1260" y="279" class="card-title">DADOS E AUDITORIA</text>
+
+    <text x="1228" y="329" class="card-main">PostgreSQL</text>
+    <text x="1228" y="357" class="body">Processos, decisões e métricas</text>
+    <line x1="1228" y1="383" x2="1512" y2="383" stroke="#2B3B47"/>
+    <text x="1228" y="411" class="body">Documentos · PDF / CSV / XLSX</text>
+    <text x="1228" y="437" class="small">Extração PyMuPDF4LLM + OCR</text>
+    <text x="1228" y="463" class="small">Modelo joblib · trilha de auditoria SQL</text>
+    <text x="1228" y="489" class="small">Traces e observabilidade · LangSmith</text>
+  </g>
+
+  <!-- Essential flows -->
+  <g class="sans">
+    <rect x="60" y="582" width="1480" height="222" rx="24" fill="#0D141C" stroke="#263A48" stroke-width="1.5"/>
+    <text x="88" y="619" class="small" letter-spacing="2">TRÊS FLUXOS ESSENCIAIS</text>
+
+    <line x1="550" y1="646" x2="550" y2="774" stroke="#273945"/>
+    <line x1="1045" y1="646" x2="1045" y2="774" stroke="#273945"/>
+
+    <circle cx="104" cy="680" r="22" fill="#173443" stroke="#315567"/>
+    <text x="104" y="687" text-anchor="middle" class="mono chip">1</text>
+    <text x="142" y="678" class="flow-title">Chat documental</text>
+    <text x="142" y="711" class="flow-text">Documentos → ferramentas → LLM → tokens SSE</text>
+    <text x="142" y="746" class="flow-output">CITAÇÕES E FERRAMENTAS EM TEMPO REAL</text>
+
+    <circle cx="594" cy="680" r="22" fill="#202039" stroke="#554E82"/>
+    <text x="594" y="687" text-anchor="middle" class="mono chip">2</text>
+    <text x="632" y="678" class="flow-title">Análise estratégica</text>
+    <text x="632" y="711" class="flow-text">Evidências → ensemble → política de decisão</text>
+    <text x="632" y="746" class="flow-output" fill="#9E8CFF">RISCO, EXPOSIÇÃO E FAIXA DE ACORDO</text>
+
+    <circle cx="1089" cy="680" r="22" fill="#3A2C18" stroke="#70562E"/>
+    <text x="1089" y="687" text-anchor="middle" class="mono chip">3</text>
+    <text x="1127" y="678" class="flow-title">Governança bancária</text>
+    <text x="1127" y="711" class="flow-text">Advogado → banco → desfecho financeiro</text>
+    <text x="1127" y="746" class="flow-output" fill="#F2B450">ADERÊNCIA E ECONOMIA MENSURÁVEIS</text>
+  </g>
+
+  <!-- Cross-cutting capabilities -->
+  <g class="sans">
+    <text x="60" y="852" class="small" letter-spacing="1.5">CAPACIDADES TRANSVERSAIS</text>
+    <circle cx="330" cy="847" r="4" fill="#59D4E8"/>
+    <text x="344" y="853" class="small">Streaming e ferramentas em tempo real</text>
+    <circle cx="710" cy="847" r="4" fill="#9E8CFF"/>
+    <text x="724" y="853" class="small">Persistência de análises e decisões</text>
+    <circle cx="1060" cy="847" r="4" fill="#F2B450"/>
+    <text x="1074" y="853" class="small">Citações, auditoria e monitoramento</text>
+  </g>
+</svg>

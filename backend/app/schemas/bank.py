@@ -9,6 +9,15 @@ AdherenceStatus = Literal["adherent", "justified", "divergent"]
 BankDecisionStatus = Literal["pending", "approved"]
 ProjectedOutcome = Literal["favorable", "unfavorable"]
 
+class JudgeChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8_000)
+
+
+class JudgeChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8_000)
+    history: list[JudgeChatTurn] = Field(default_factory=list, max_length=20)
+
 
 class BankDashboardMetrics(BaseModel):
     adherence_rate: float = Field(ge=0, le=1)

@@ -8,7 +8,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic import ValidationError
 
+import app.services.judge as judge_module
 from app.config import Settings
+from app.db.session import SessionFactory
 from app.documents import DOCUMENT_TOOLS, DocumentRepository, ProcessDataRepository
 from app.domain import SettlementPolicy
 from app.graph.judge import JUDGE_TOOLS, JudgeState
@@ -21,7 +23,7 @@ from app.ml.tools import (
 )
 from app.schemas.analysis import AnalysisRequest, EvidenceInput, ResolvedAnalysisInput
 from app.schemas.judge import JudgeReviewRequest, ProcessDataRecord, ProcessDataReference
-from app.services.judge import JudgeService
+from app.services.judge import JudgeOutputError, JudgeService
 
 CASE_ONE_PATHS = (
     "cases/Caso_01_0801234-56-2024-8-10-0001/01_Autos_Processo_0801234-56-2024-8-10-0001.pdf",
@@ -265,6 +267,26 @@ def test_document_tool_rejects_file_not_supplied_to_review() -> None:
     assert "not supplied" in payload["error"]
 
 
+
+@pytest.mark.asyncio
+async def test_judge_service_normalizes_invalid_graph_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class InvalidGraph:
+        async def ainvoke(self, *_: object, **__: object) -> dict[str, object]:
+            return {}
+
+    monkeypatch.setattr(judge_module, "get_compiled_judge_graph", lambda: InvalidGraph())
+    request = JudgeReviewRequest(
+        case_number="0000000-00.2024.8.10.0001",
+        documents=[{"path": PDF_PATH, "document_type": "case_record"}],
+        new_case_data={"state": "MA", "sub_subject": "generic", "claim_amount": 1},
+    )
+
+    async with SessionFactory() as session:
+        with pytest.raises(JudgeOutputError, match="invalid review payload"):
+            await JudgeService().review(session, request)
+
 @pytest.mark.asyncio
 async def test_judge_reference_endpoints_list_documents_and_process_data() -> None:
     transport = ASGITransport(app=app)
@@ -280,6 +302,7 @@ async def test_judge_reference_endpoints_list_documents_and_process_data() -> No
     assert process_response.json()["process_number"] == PROCESS_NUMBER
     assert process_response.json()["state"] == "CE"
     assert process_response.json()["claim_amount"] == 13_534
+    assert "subject" not in process_response.json()
     assert process_response.json()["source_rows"] == {
         "Resultados dos processos": 2,
         "Subsídios disponibilizados": 3,

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Database,
   FileCheck2,
+  PencilLine,
   RefreshCw,
   Save,
   Scale,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import type {
+  AgreementJustificationReview,
   EvidenceInput,
   EvidenceKey,
   LegalProcess,
@@ -25,14 +27,13 @@ import type {
 type Props = {
   legalProcess: LegalProcess;
   onProcessUpdated: (legalProcess: LegalProcess) => void;
+  onRequestAgreementJustification: () => void;
 };
 
 type EditableProcess = {
   case_number: string;
   title: string;
-  location: string;
   state: string;
-  subject: string;
   sub_subject: "fraud" | "generic";
   claim_amount: string;
   evidence: EvidenceInput;
@@ -53,6 +54,21 @@ const decisionLabels: Record<DecisionChoice, string> = {
   agreement: "Acordo",
   defense: "Defesa",
   human_review: "Revisão humana",
+};
+
+type DecisionJustificationDrafts = Record<DecisionChoice, string>;
+
+const emptyDecisionJustifications: DecisionJustificationDrafts = {
+  agreement: "",
+  defense: "",
+  human_review: "",
+};
+
+const reviewVerdictLabels: Record<AgreementJustificationReview["verdict"], string> = {
+  supported: "Justificativa sustentada pelos documentos",
+  partially_supported: "Justificativa parcialmente sustentada",
+  insufficient_evidence: "Documentação insuficiente para validar a justificativa",
+  not_supported: "Justificativa não sustentada pelos documentos",
 };
 
 
@@ -79,10 +95,6 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function isMeaningfulCaseValue(value: string): boolean {
-  const normalized = value.trim().toLocaleLowerCase("pt-BR");
-  return Boolean(normalized) && !["sem informações", "novo processo", "na"].includes(normalized);
-}
 
 
 
@@ -90,9 +102,7 @@ function editableProcess(overview: ProcessFinancialOverview): EditableProcess {
   return {
     case_number: overview.case_number,
     title: overview.title,
-    location: overview.location,
     state: overview.state,
-    subject: overview.subject,
     sub_subject: overview.sub_subject,
     claim_amount: overview.claim_amount > 0.01 ? String(overview.claim_amount) : "",
     evidence: overview.evidence,
@@ -102,6 +112,7 @@ function editableProcess(overview: ProcessFinancialOverview): EditableProcess {
 export function ProcessFinancialDashboard({
   legalProcess,
   onProcessUpdated,
+  onRequestAgreementJustification,
 }: Props) {
   const [overview, setOverview] = useState<ProcessFinancialOverview | null>(null);
   const [form, setForm] = useState<EditableProcess | null>(null);
@@ -113,8 +124,11 @@ export function ProcessFinancialDashboard({
   const [submitting, setSubmitting] = useState(false);
   const [decisionChoice, setDecisionChoice] = useState<DecisionChoice>("human_review");
   const [decisionAmount, setDecisionAmount] = useState("");
-  const [decisionJustification, setDecisionJustification] = useState("");
+  const [decisionJustifications, setDecisionJustifications] =
+    useState<DecisionJustificationDrafts>(emptyDecisionJustifications);
   const [submittedDecision, setSubmittedDecision] = useState<SubmittedProcessDecision | null>(null);
+  const [editingDecision, setEditingDecision] = useState(false);
+  const decisionJustification = decisionJustifications[decisionChoice];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -126,8 +140,19 @@ export function ProcessFinancialDashboard({
       .then((result) => {
         setOverview(result);
         setForm(editableProcess(result));
+        const choice =
+          result.latest_decision?.recommendation ??
+          result.decision?.recommendation ??
+          "human_review";
+        const justifications = {
+          ...emptyDecisionJustifications,
+          ...result.decision_justifications,
+        };
+        if (result.latest_decision?.justification) {
+          justifications[choice] = result.latest_decision.justification;
+        }
         setSubmittedDecision(result.latest_decision);
-        const choice = result.latest_decision?.recommendation ?? result.decision?.recommendation ?? "human_review";
+        setEditingDecision(result.latest_decision === null);
         setDecisionChoice(choice);
         setDecisionAmount(
           result.latest_decision?.amount
@@ -136,7 +161,7 @@ export function ProcessFinancialDashboard({
               ? String(result.decision.agreement_range.target)
               : "",
         );
-        setDecisionJustification(result.latest_decision?.justification ?? "");
+        setDecisionJustifications(justifications);
         setError(null);
       })
       .catch((caught: unknown) => {
@@ -154,14 +179,14 @@ export function ProcessFinancialDashboard({
   async function persistForm(): Promise<LegalProcess> {
     if (!form) throw new Error("Os campos do processo ainda não foram carregados.");
     const claimAmount = Number(form.claim_amount.replace(",", "."));
-    if (!form.case_number.trim() || !form.title.trim() || !form.location.trim()) {
-      throw new Error("Preencha o nome, o número e a localização do processo.");
+    if (!form.case_number.trim() || !form.title.trim()) {
+      throw new Error("Preencha o nome e o número do processo.");
     }
     if (form.state.trim().length !== 2) {
       throw new Error("A UF precisa ter exatamente duas letras.");
     }
-    if (!form.subject.trim() || !Number.isFinite(claimAmount) || claimAmount <= 0) {
-      throw new Error("Preencha o assunto e um valor da causa maior que zero.");
+    if (!Number.isFinite(claimAmount) || claimAmount <= 0) {
+      throw new Error("Preencha um valor da causa maior que zero.");
     }
 
     return apiFetch<LegalProcess>(
@@ -173,9 +198,7 @@ export function ProcessFinancialDashboard({
           ...form,
           case_number: form.case_number.trim(),
           title: form.title.trim(),
-          location: form.location.trim(),
           state: form.state.trim().toUpperCase(),
-          subject: form.subject.trim(),
           claim_amount: claimAmount,
         }),
       },
@@ -224,18 +247,14 @@ export function ProcessFinancialDashboard({
       setForm((current) => (current ? { ...current, title: updated.title } : current));
       setRevision((current) => current + 1);
     } catch (caught: unknown) {
-      setError(caught instanceof Error ? caught.message : "A IA não conseguiu sugerir o nome.");
+      setError(caught instanceof Error ? caught.message : "Não foi possível sugerir o nome.");
     } finally {
       setNaming(false);
     }
   }
 
   async function submitDecision() {
-    if (!overview?.decision) {
-      setError("Preencha todos os dados e marque os seis documentos antes de registrar uma decisão.");
-      return;
-    }
-    if (!form || saving || naming || submitting) return;
+    if (!form || saving || naming || submitting || (submittedDecision && !editingDecision)) return;
     if (decisionChoice === "agreement") {
       const amount = Number(decisionAmount.replace(",", "."));
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -244,10 +263,11 @@ export function ProcessFinancialDashboard({
       }
     }
     if (
+      overview?.decision &&
       decisionChoice !== overview.decision.recommendation &&
       !decisionJustification.trim()
     ) {
-      setError("Justifique a decisão quando ela divergir da recomendação do modelo.");
+      setError("Justifique a decisão quando ela divergir da recomendação atual.");
       return;
     }
 
@@ -255,10 +275,8 @@ export function ProcessFinancialDashboard({
     setError(null);
     setFeedback(null);
     try {
-      const updated = await persistForm();
-      onProcessUpdated(updated);
       const decision = await apiFetch<SubmittedProcessDecision>(
-        `/v1/processes/${encodeURIComponent(updated.case_number)}/decisions`,
+        `/v1/processes/${encodeURIComponent(legalProcess.case_number)}/decisions`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -273,6 +291,7 @@ export function ProcessFinancialDashboard({
         },
       );
       setSubmittedDecision(decision);
+      setEditingDecision(false);
       setFeedback("Decisão submetida e armazenada.");
       setRevision((current) => current + 1);
     } catch (caught: unknown) {
@@ -306,25 +325,22 @@ export function ProcessFinancialDashboard({
       <section className="financial-dashboard-state" aria-live="polite">
         <span className="spinner" />
         <strong>Calculando risco e estratégia</strong>
-        <p>Consultando os dados salvos e o modelo local.</p>
+        <p>Consultando as informações salvas do processo.</p>
       </section>
     );
   }
 
   const evidenceEntries = Object.entries(form.evidence) as Array<[EvidenceKey, boolean]>;
   const claimAmount = Number(form.claim_amount.replace(",", "."));
-  const hasCompleteInputs =
-    isMeaningfulCaseValue(form.title) &&
-    isMeaningfulCaseValue(form.location) &&
-    form.state.trim().length === 2 &&
-    form.state.trim().toUpperCase() !== "NA" &&
-    isMeaningfulCaseValue(form.subject) &&
-    Number.isFinite(claimAmount) &&
-    claimAmount > 0.01 &&
-    evidenceEntries.every(([, available]) => available);
+  const missingAgentInputs = [
+    form.state.trim().length === 2 && form.state.trim().toUpperCase() !== "NA"
+      ? null
+      : "UF",
+    Number.isFinite(claimAmount) && claimAmount > 0.01 ? null : "valor da causa",
+  ].filter((value): value is string => value !== null);
   const risk = overview.risk;
   const decision = overview.decision;
-  const modelAvailable = hasCompleteInputs && risk !== null && decision !== null;
+  const modelAvailable = risk !== null && decision !== null;
   const decisionTone = decision?.recommendation ?? "human_review";
   const riskStyle = {
     "--risk-angle": `${(risk?.loss_probability ?? 0) * 360}deg`,
@@ -348,13 +364,6 @@ export function ProcessFinancialDashboard({
               <Scale size={16} />
             </div>
             <div className="financial-fields">
-              <label>
-                <span>Localização</span>
-                <input
-                  onChange={(event) => setForm({ ...form, location: event.target.value })}
-                  value={form.location}
-                />
-              </label>
               <label>
                 <span>UF</span>
                 <input
@@ -404,7 +413,7 @@ export function ProcessFinancialDashboard({
                   />
                   <button disabled={saving || naming || submitting} onClick={() => void inferTitle()} type="button">
                     {naming ? <span className="spinner" /> : <WandSparkles size={14} />}
-                    {naming ? "Gerando" : "Sugerir com IA"}
+                    {naming ? "Gerando" : "Sugerir nome"}
                   </button>
                 </div>
               </label>
@@ -416,13 +425,6 @@ export function ProcessFinancialDashboard({
                   value={form.case_number}
                 />
               </label>
-              <label>
-                <span>Assunto</span>
-                <input
-                  onChange={(event) => setForm({ ...form, subject: event.target.value })}
-                  value={form.subject}
-                />
-              </label>
             </div>
           </article>
         </div>
@@ -430,7 +432,7 @@ export function ProcessFinancialDashboard({
 
         <fieldset className="financial-evidence-editor">
           <legend>Documentos para análise</legend>
-          <p>Marque os documentos disponíveis. A avaliação é liberada com os seis subsídios.</p>
+          <p>A análise considera os documentos reconhecidos, mas a quantidade não bloqueia o envio.</p>
           <div className="evidence-mini-list">
             {evidenceEntries.map(([key, available]) => (
               <label className={available ? "available" : "missing"} key={key}>
@@ -481,33 +483,90 @@ export function ProcessFinancialDashboard({
               </article>
             </div>
 
-            <aside className={`financial-suggestion-card ${decisionTone}`} aria-label="Sugestão da IA">
-              <span>Sugestão da IA</span>
+            <aside
+              aria-label="Sugestão de encaminhamento"
+              className={`financial-suggestion-card ${decisionTone}`}
+            >
+              <span>Sugestão de encaminhamento</span>
               <strong>{decisionLabels[decisionTone]}</strong>
             </aside>
           </>
         )}
 
-        <article className={`financial-decision-card submission ${modelAvailable ? decisionTone : "no-data"}`}>
+        {modelAvailable && (
+          <section className="agreement-justification-section" aria-labelledby="agreement-review-title">
+            {overview.agreement_justification_review && (
+              <article
+                className={`agreement-justification-review ${overview.agreement_justification_review.verdict}`}
+              >
+                <div>
+                  <FileCheck2 aria-hidden="true" size={20} />
+                  <div>
+                    <span>Revisão da justificativa</span>
+                    <h3>{reviewVerdictLabels[overview.agreement_justification_review.verdict]}</h3>
+                  </div>
+                </div>
+                <p>{overview.agreement_justification_review.summary}</p>
+                {overview.agreement_justification_review.supporting_evidence.length > 0 && (
+                  <ul>
+                    {overview.agreement_justification_review.supporting_evidence.map((evidence) => (
+                      <li key={evidence}>{evidence}</li>
+                    ))}
+                  </ul>
+                )}
+                {overview.agreement_justification_review.missing_documents.length > 0 && (
+                  <p className="review-missing-documents">
+                    Ainda faltam: {overview.agreement_justification_review.missing_documents.join(", ")}.
+                  </p>
+                )}
+                <small>Esta conferência não altera o risco nem a exposição estimada.</small>
+              </article>
+            )}
+            <article className="agreement-justification-card">
+              <div>
+                <span>Conferência documental</span>
+                <h3 id="agreement-review-title">Revisar justificativa no chat</h3>
+                <p>
+                  Explique por que a decisão escolhida é adequada. A próxima mensagem será
+                  confrontada com os documentos e a fundamentação já registrados.
+                </p>
+              </div>
+              <button onClick={onRequestAgreementJustification} type="button">
+                <FileCheck2 size={16} />
+                Justificar no chat
+              </button>
+            </article>
+          </section>
+        )}
+
+        <article
+          className={`financial-decision-card submission ${modelAvailable ? decisionTone : "no-data"} ${
+            submittedDecision && !editingDecision ? "locked" : ""
+          }`}
+        >
           <div className="decision-icon">
             {modelAvailable && decisionTone === "human_review" ? <AlertTriangle size={20} /> : <ShieldCheck size={20} />}
           </div>
           <div className="decision-copy">
             <span>Decisão do advogado</span>
-            <h3>{modelAvailable ? "Registrar decisão" : "Aguardando dados completos"}</h3>
+            <h3>{submittedDecision && !editingDecision ? "Decisão registrada" : "Registrar decisão"}</h3>
             <p>
-              {modelAvailable
-                ? "Esta escolha ficará disponível para a operação bancária."
-                : "Preencha os dados do processo, marque os seis documentos e salve para liberar esta decisão."}
+              {submittedDecision && !editingDecision
+                ? "Clique em editar para alterar esta decisão."
+                : modelAvailable
+                  ? "A recomendação está disponível."
+                  : missingAgentInputs.length > 0
+                    ? `Faltam ${missingAgentInputs.join(" e ")} para concluir a análise. Você pode submeter agora.`
+                    : "Salve as alterações para atualizar a recomendação. Você pode submeter agora."}
             </p>
           </div>
           <div className="decision-controls">
             <div className="decision-options" role="radiogroup" aria-label="Decisão do processo">
               {(Object.keys(decisionLabels) as DecisionChoice[]).map((choice) => (
-                <label className={[decisionChoice === choice ? "selected" : "", !modelAvailable ? "disabled" : ""].filter(Boolean).join(" ")} key={choice}>
+                <label className={decisionChoice === choice ? "selected" : ""} key={choice}>
                   <input
                     checked={decisionChoice === choice}
-                    disabled={!modelAvailable}
+                    disabled={saving || naming || submitting || Boolean(submittedDecision && !editingDecision)}
                     name="decision"
                     onChange={() => setDecisionChoice(choice)}
                     type="radio"
@@ -521,7 +580,7 @@ export function ProcessFinancialDashboard({
               <label className="decision-amount-field">
                 <span>Valor aprovado</span>
                 <input
-                  disabled={!modelAvailable}
+                  disabled={saving || naming || submitting || Boolean(submittedDecision && !editingDecision)}
                   min="0.01"
                   onChange={(event) => setDecisionAmount(event.target.value)}
                   placeholder="0,00"
@@ -534,13 +593,20 @@ export function ProcessFinancialDashboard({
             <label className="decision-justification-field">
               <span>Justificativa da decisão</span>
               <textarea
-                disabled={!modelAvailable}
+                disabled={saving || naming || submitting || Boolean(submittedDecision && !editingDecision)}
                 maxLength={2000}
-                onChange={(event) => setDecisionJustification(event.target.value)}
+                onChange={(event) =>
+                  setDecisionJustifications((current) => ({
+                    ...current,
+                    [decisionChoice]: event.target.value,
+                  }))
+                }
                 placeholder={
-                  decisionChoice === overview.decision?.recommendation
-                    ? "Opcional quando a decisão segue o modelo"
-                    : "Obrigatória para registrar uma divergência"
+                  overview.decision_justifications
+                    ? "Sugestão da análise; edite antes de enviar"
+                    : !overview.decision || decisionChoice === overview.decision.recommendation
+                      ? "Opcional"
+                      : "Obrigatória quando a decisão for diferente da recomendação"
                 }
                 rows={3}
                 value={decisionJustification}
@@ -548,19 +614,39 @@ export function ProcessFinancialDashboard({
             </label>
           </div>
           <button
-            className="submit-decision-button"
-            disabled={!modelAvailable || saving || naming || submitting}
-            onClick={() => void submitDecision()}
+            className={`submit-decision-button ${
+              submittedDecision && !editingDecision ? "edit-decision-button" : ""
+            }`}
+            disabled={saving || naming || submitting}
+            onClick={() => {
+              if (submittedDecision && !editingDecision) {
+                setEditingDecision(true);
+                setFeedback(null);
+                setError(null);
+                return;
+              }
+              void submitDecision();
+            }}
             type="button"
           >
-            {submitting ? <span className="spinner" /> : <SendHorizontal size={15} />}
-            {submitting ? "Submetendo" : "Submeter decisão"}
+            {submittedDecision && !editingDecision ? (
+              <PencilLine size={15} />
+            ) : submitting ? (
+              <span className="spinner" />
+            ) : (
+              <SendHorizontal size={15} />
+            )}
+            {submittedDecision && !editingDecision
+              ? "Editar decisão"
+              : submitting
+                ? "Submetendo"
+                : "Submeter decisão"}
           </button>
           {submittedDecision && (
             <div className="submitted-decision-note">
               <CheckCircle2 size={14} />
               <span>
-                Última decisão: {decisionLabels[submittedDecision.recommendation]}
+                Decisão registrada: {decisionLabels[submittedDecision.recommendation]}
                 {submittedDecision.amount ? ` · ${formatCurrency(submittedDecision.amount)}` : ""}
                 {` · ${formatDate(submittedDecision.created_at)}`}
               </span>

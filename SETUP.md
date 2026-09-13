@@ -297,8 +297,8 @@ curl 'http://localhost:8000/v1/process-data/1764352-89.2025.8.06.1818'
 ```
 
 O lookup une as abas `Resultados dos processos` e `Subsídios disponibilizados`. A resposta
-contém UF, assunto, sub-assunto, valor da causa, seis indicadores binários e as linhas de
-origem. `Resultado macro`, `Resultado micro` e `Valor da condenação/indenização` são excluídos.
+contém UF, sub-assunto, valor da causa, seis indicadores binários e as linhas de origem.
+`Resultado macro`, `Resultado micro` e `Valor da condenação/indenização` são excluídos.
 
 Um processo novo, sem linha na planilha, fornece os três campos pré-processuais não derivados
 dos documentos e referencia cada PDF com seu tipo:

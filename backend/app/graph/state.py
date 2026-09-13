@@ -29,4 +29,6 @@ class AnalysisState(TypedDict, total=False):
     factors_for_agreement: list[str]
     factors_for_defense: list[str]
     explanation: str
+    decision_justifications: dict[str, str]
     policy_version: str
+    agreement_justification_review: dict[str, Any] | None

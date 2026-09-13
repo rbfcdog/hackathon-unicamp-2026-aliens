@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  ArrowLeft,
   ArrowRight,
   Building2,
   Check,
@@ -17,8 +15,13 @@ import {
   ShieldCheck,
   TrendingDown,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
-import type { BankDashboardResponse, BankDecisionItem, DecisionChoice } from "@/lib/types";
+import { apiEventStream, apiFetch } from "@/lib/api";
+import type {
+  BankDashboardResponse,
+  BankDecisionItem,
+  BankJudgeReview,
+  DecisionChoice,
+} from "@/lib/types";
 import styles from "./bank-dashboard.module.css";
 
 const decisionLabels: Record<DecisionChoice, string> = {
@@ -32,6 +35,15 @@ const adherenceLabels: Record<BankDecisionItem["adherence_status"], string> = {
   justified: "Justificada",
   divergent: "Divergente",
 };
+
+const judgeDispositionLabels: Record<BankJudgeReview["disposition"], string> = {
+  grant_claim: "Procedência",
+  deny_claim: "Improcedência",
+  partial_grant: "Procedência parcial",
+  insufficient_evidence: "Prova insuficiente",
+};
+const OUTCOME_SIMULATION_MS = 3_000;
+
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -68,8 +80,11 @@ export function BankDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [judgeReview, setJudgeReview] = useState<BankJudgeReview | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestedReviewsRef = useRef(new Set<string>());
 
   const loadDashboard = useCallback(async (background = false) => {
     if (background) setRefreshing(true);
@@ -110,11 +125,89 @@ export function BankDashboard() {
     [dashboard, selectedId],
   );
 
+  const reviewedDecision =
+    judgeReview?.case_number === selectedDecision?.case_number ? judgeReview : null;
+  const selectedOutcomeImpact =
+    selectedDecision?.projected_outcome === "favorable"
+      ? selectedDecision.optimized_savings ?? 0
+      : selectedDecision?.projected_outcome === "unfavorable"
+        ? selectedDecision.projected_decision_cost ??
+          selectedDecision.historical_estimated_condemnation
+        : null;
+
+
+  function selectDecision(decisionId: string) {
+    setSelectedId(decisionId);
+    setJudgeReview(null);
+  }
+
+  const reviewDecision = useCallback(async (decision: BankDecisionItem) => {
+    if (reviewingId || approvingId) return;
+    setReviewingId(decision.id);
+    setJudgeReview(null);
+    setError(null);
+    try {
+      let completedReview: BankJudgeReview | null = null;
+      await apiEventStream(
+        `/v1/bank/decisions/${decision.id}/judge-review/stream`,
+        {},
+        (event) => {
+          if (event.event === "complete") {
+            completedReview = event.data as BankJudgeReview;
+            return;
+          }
+          if (event.event === "error") {
+            const message =
+              typeof event.data === "object" &&
+              event.data !== null &&
+              "message" in event.data &&
+              typeof event.data.message === "string"
+                ? event.data.message
+                : "Não foi possível concluir a revisão do agente juiz.";
+            throw new Error(message);
+          }
+        },
+      );
+      if (!completedReview) {
+        throw new Error("A revisão do agente juiz foi encerrada sem parecer.");
+      }
+      setJudgeReview(completedReview);
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Não foi possível concluir a revisão do agente juiz.",
+      );
+    } finally {
+      setReviewingId(null);
+    }
+  }, [approvingId, reviewingId]);
+
+  useEffect(() => {
+    if (
+      !selectedDecision ||
+      reviewedDecision ||
+      requestedReviewsRef.current.has(selectedDecision.id)
+    ) {
+      return;
+    }
+    requestedReviewsRef.current.add(selectedDecision.id);
+    void reviewDecision(selectedDecision);
+  }, [reviewDecision, reviewedDecision, selectedDecision]);
+
+
   async function approveSelectedDecision() {
     if (!selectedDecision || approvingId) return;
+    if (!reviewedDecision) {
+      setError("Revise a decisão com o agente juiz antes de encaminhá-la.");
+      return;
+    }
     setApprovingId(selectedDecision.id);
     setError(null);
     try {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      window.setTimeout(resolve, OUTCOME_SIMULATION_MS);
+      await promise;
       await apiFetch<BankDecisionItem>(
         `/v1/bank/decisions/${selectedDecision.id}/approve`,
         { method: "POST" },
@@ -159,25 +252,21 @@ export function BankDashboard() {
     {
       label: "Aderência",
       value: formatPercent(metrics.adherence_rate),
-      detail: `${metrics.adherent_count} decisões alinhadas`,
       icon: ShieldCheck,
     },
     {
-      label: "Economia otimizada",
+      label: "Economia",
       value: formatCurrency(metrics.estimated_savings),
-      detail: `${formatPercent(metrics.relative_savings)} sobre a condenação-base`,
       icon: TrendingDown,
     },
     {
-      label: "Efetividade projetada",
+      label: "Êxito das decisões",
       value: formatPercent(metrics.projected_success_rate),
-      detail: `${metrics.favorable_count} favoráveis · ${metrics.unfavorable_count} desfavoráveis`,
       icon: CircleCheckBig,
     },
     {
       label: "Processos",
       value: new Intl.NumberFormat("pt-BR").format(metrics.process_count),
-      detail: `${metrics.decision_count} com decisão submetida`,
       icon: Scale,
     },
   ];
@@ -186,9 +275,6 @@ export function BankDashboard() {
     <main className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brandBlock}>
-          <Link className={styles.backLink} href="/">
-            <ArrowLeft size={15} /> Área do advogado
-          </Link>
           <div className={styles.brand}>
             ENTER<span>OS</span>
           </div>
@@ -200,11 +286,6 @@ export function BankDashboard() {
             <strong>Política de acordos</strong>
           </div>
         </div>
-        <nav aria-label="Seções do painel" className={styles.nav}>
-          <a href="#monitoramento">Monitoramento</a>
-          <a href="#decisoes">Decisões</a>
-          <a href="#efetividade">Efetividade</a>
-        </nav>
         <button
           aria-label="Atualizar painel"
           className={styles.refreshButton}
@@ -218,26 +299,19 @@ export function BankDashboard() {
       </header>
 
       <div className={styles.content}>
-        <section className={styles.intro} id="monitoramento">
-          <div>
-            <span className={styles.eyebrow}>Monitoramento da política</span>
-            <h1>Da recomendação à decisão operacional.</h1>
-          </div>
-          <p>
-            Cada número abaixo é calculado a partir da última decisão submetida pelos
-            advogados e persistida no banco de dados.
-          </p>
-        </section>
 
-        <section aria-label="Indicadores principais" className={styles.kpiGrid}>
-          {kpis.map(({ label, value, detail, icon: Icon }) => (
+        <section
+          aria-label="Indicadores principais"
+          className={styles.kpiGrid}
+          id="monitoramento"
+        >
+          {kpis.map(({ label, value, icon: Icon }) => (
             <article className={styles.kpiCard} key={label}>
               <div className={styles.kpiHeader}>
                 <span>{label}</span>
                 <Icon size={16} />
               </div>
               <strong>{value}</strong>
-              <small>{detail}</small>
             </article>
           ))}
         </section>
@@ -246,23 +320,21 @@ export function BankDashboard() {
           <div className={styles.sectionHeading}>
             <div>
               <span>Leitura de aderência</span>
-              <h2>Como os advogados estão respondendo ao modelo</h2>
+              <h2>Como os advogados estão respondendo à recomendação</h2>
             </div>
-            <small>Uma decisão divergente só é justificada quando contém justificativa registrada.</small>
           </div>
           <div className={styles.adherenceRail}>
             {(
               [
-                ["adherent", metrics.adherent_count, "Decisão igual à recomendação"],
-                ["justified", metrics.justified_count, "Divergência fundamentada"],
-                ["divergent", metrics.divergent_count, "Divergência sem justificativa"],
+                ["adherent", metrics.adherent_count],
+                ["justified", metrics.justified_count],
+                ["divergent", metrics.divergent_count],
               ] as const
-            ).map(([status, count, description]) => (
+            ).map(([status, count]) => (
               <article className={`${styles.adherenceCard} ${styles[status]}`} key={status}>
                 <i />
                 <strong>{count}</strong>
                 <span>{adherenceLabels[status]}</span>
-                <small>{description}</small>
               </article>
             ))}
           </div>
@@ -274,7 +346,6 @@ export function BankDashboard() {
               <span>Fila operacional</span>
               <h2>Últimas decisões dos advogados</h2>
             </div>
-            <small>Selecione uma linha para revisar o processo.</small>
           </div>
 
           {dashboard.decisions.length === 0 ? (
@@ -285,12 +356,13 @@ export function BankDashboard() {
             </div>
           ) : (
             <div className={styles.decisionWorkspace}>
-              <div className={styles.tableWrap}>
+              <div className={styles.decisionListColumn}>
+                <div className={styles.tableWrap}>
                 <table className={styles.decisionTable}>
                   <thead>
                     <tr>
                       <th>Processo</th>
-                      <th>Modelo</th>
+                      <th>Recomendação</th>
                       <th>Advogado</th>
                       <th>Status</th>
                     </tr>
@@ -301,10 +373,10 @@ export function BankDashboard() {
                         aria-selected={decision.id === selectedId}
                         className={decision.id === selectedId ? styles.selectedRow : undefined}
                         key={decision.id}
-                        onClick={() => setSelectedId(decision.id)}
+                        onClick={() => selectDecision(decision.id)}
                       >
                         <td>
-                          <button onClick={() => setSelectedId(decision.id)} type="button">
+                          <button onClick={() => selectDecision(decision.id)} type="button">
                             <strong>{decision.process_title}</strong>
                             <small>{decision.case_number}</small>
                           </button>
@@ -321,6 +393,79 @@ export function BankDashboard() {
                   </tbody>
                 </table>
               </div>
+                {selectedDecision && (
+                  <section className={styles.judgeReview} aria-label="Parecer do agente juiz">
+                    <div className={styles.judgeReviewHeader}>
+                      <div>
+                        <span>Parecer independente</span>
+                        <h4>Agente juiz</h4>
+                      </div>
+                      {reviewedDecision && (
+                        <strong className={styles.judgeDisposition}>
+                          {judgeDispositionLabels[reviewedDecision.disposition]}
+                        </strong>
+                      )}
+                    </div>
+
+                    {reviewingId === selectedDecision.id && !reviewedDecision ? (
+                      <div
+                        aria-live="polite"
+                        className={styles.judgeInitialLoading}
+                        role="status"
+                      >
+                        <div>
+                          <Scale size={15} />
+                          <strong>Analisando decisão e documentos</strong>
+                        </div>
+                        <span className={styles.judgeLoadingTrack}><i /></span>
+                      </div>
+                    ) : reviewedDecision ? (
+                      <>
+                        <p className={styles.judgeReviewCopy}>{reviewedDecision.summary}</p>
+                        <p className={styles.judgeMeta}>
+                          {formatPercent(reviewedDecision.confidence)} ·{" "}
+                          {reviewedDecision.consulted_documents.length} documento
+                          {reviewedDecision.consulted_documents.length === 1 ? "" : "s"}
+                        </p>
+                        {(reviewedDecision.findings.length > 0 ||
+                          reviewedDecision.missing_evidence.length > 0) && (
+                          <details className={styles.judgeEvidence}>
+                            <summary>Ver fundamentos e provas necessárias</summary>
+                            <div className={styles.judgeFindings}>
+                              {reviewedDecision.findings.map((finding, index) => (
+                                <article
+                                  className={styles.judgeFinding}
+                                  key={`${finding.issue}-${index}`}
+                                >
+                                  <strong>{finding.issue}</strong>
+                                  <span>{finding.conclusion}</span>
+                                  <p>{finding.reasoning}</p>
+                                </article>
+                              ))}
+                            </div>
+                            {reviewedDecision.missing_evidence.length > 0 && (
+                              <p className={styles.judgeMissing}>
+                                <strong>Provas necessárias:</strong>{" "}
+                                {reviewedDecision.missing_evidence.join(" · ")}
+                              </p>
+                            )}
+                          </details>
+                        )}
+
+                      </>
+                    ) : (
+                      <button
+                        className={styles.judgeButton}
+                        disabled={reviewingId !== null || approvingId !== null}
+                        onClick={() => void reviewDecision(selectedDecision)}
+                        type="button"
+                      >
+                        <Scale size={15} /> Tentar novamente
+                      </button>
+                    )}
+                  </section>
+                )}
+              </div>
 
               {selectedDecision && (
                 <article className={styles.decisionDetail}>
@@ -333,33 +478,18 @@ export function BankDashboard() {
 
                   <div className={styles.decisionFlow} aria-label="Fluxo da decisão">
                     <div>
-                      <span>Modelo</span>
+                      <span>Recomendação</span>
                       <strong>{decisionLabels[selectedDecision.model_recommendation]}</strong>
-                      <small>
-                        {selectedDecision.recommended_amount === null
-                          ? "Sem faixa monetária"
-                          : `Alvo ${formatCurrency(selectedDecision.recommended_amount)}`}
-                      </small>
                     </div>
                     <ArrowRight size={16} />
                     <div>
                       <span>Advogado</span>
                       <strong>{decisionLabels[selectedDecision.lawyer_recommendation]}</strong>
-                      <small>
-                        {selectedDecision.lawyer_amount === null
-                          ? "Sem valor informado"
-                          : formatCurrency(selectedDecision.lawyer_amount)}
-                      </small>
                     </div>
                     <ArrowRight size={16} />
                     <div>
                       <span>Banco</span>
                       <strong>{selectedDecision.bank_status === "approved" ? "Encaminhada" : "Pendente"}</strong>
-                      <small>
-                        {selectedDecision.bank_reviewed_at
-                          ? formatDate(selectedDecision.bank_reviewed_at)
-                          : "Aguardando revisão"}
-                      </small>
                     </div>
                     <ArrowRight size={16} />
                     <div
@@ -369,7 +499,7 @@ export function BankDashboard() {
                           : undefined
                       }
                     >
-                      <span>Projeção</span>
+                      <span>Resultado da causa</span>
                       <strong>
                         {selectedDecision.projected_outcome === "favorable"
                           ? "Favorável"
@@ -377,13 +507,21 @@ export function BankDashboard() {
                             ? "Desfavorável"
                             : "Aguardando"}
                       </strong>
-                      <small>
-                        {selectedDecision.projected_outcome
-                          ? "Calculada no encaminhamento"
-                          : "Disponível após prosseguir"}
-                      </small>
                     </div>
                   </div>
+
+                  {approvingId === selectedDecision.id && (
+                    <div className={styles.outcomeWait} role="status" aria-live="polite">
+                      <div>
+                        <Clock3 size={17} />
+                        <span>Aguardando resultado da causa</span>
+                      </div>
+                      <div className={styles.outcomeWaitTrack} aria-hidden="true">
+                        <i />
+                      </div>
+                      <p>A decisão foi encaminhada. Consolidando o desfecho e o impacto financeiro.</p>
+                    </div>
+                  )}
 
                   {selectedDecision.projected_outcome && (
                     <div
@@ -398,9 +536,8 @@ export function BankDashboard() {
                           <CircleX size={18} />
                         )}
                         <div>
-                          <span>Resultado projetado</span>
                           <strong>
-                            Caminho{" "}
+                            Causa encerrada com resultado{" "}
                             {selectedDecision.projected_outcome === "favorable"
                               ? "favorável"
                               : "desfavorável"}
@@ -411,6 +548,24 @@ export function BankDashboard() {
                         <i className={styles.favorableBranch}>Favorável</i>
                         <i className={styles.unfavorableBranch}>Desfavorável</i>
                       </div>
+                      {selectedOutcomeImpact !== null && (
+                        <div className={styles.outcomeResultSummary}>
+                          <div>
+                            <span>
+                              {selectedDecision.projected_outcome === "favorable"
+                                ? "Economia obtida"
+                                : "Perda na causa"}
+                            </span>
+                            <strong>{formatCurrency(selectedOutcomeImpact)}</strong>
+                          </div>
+                          <div>
+                            <span>Custo final</span>
+                            <strong>
+                              {formatCurrency(selectedDecision.projected_decision_cost ?? 0)}
+                            </strong>
+                          </div>
+                        </div>
+                      )}
                       <p>{selectedDecision.projected_outcome_reason}</p>
                     </div>
                   )}
@@ -425,7 +580,7 @@ export function BankDashboard() {
                       <dd><FileCheck2 size={14} /> {selectedDecision.evidence_count} de 6 documentos disponíveis</dd>
                     </div>
                     <div>
-                      <dt>Exposição estimada</dt>
+                      <dt>Exposição</dt>
                       <dd>{formatCurrency(selectedDecision.expected_condemnation)}</dd>
                     </div>
                     <div>
@@ -433,7 +588,7 @@ export function BankDashboard() {
                       <dd>{formatCurrency(selectedDecision.claim_amount)}</dd>
                     </div>
                     <div>
-                      <dt>Condenação-base histórica</dt>
+                      <dt>Condenação de referência</dt>
                       <dd>
                         {formatCurrency(selectedDecision.historical_estimated_condemnation)}
                         {" · "}
@@ -442,13 +597,13 @@ export function BankDashboard() {
                     </div>
                     {selectedDecision.projected_decision_cost !== null && (
                       <div>
-                        <dt>Custo projetado da decisão</dt>
+                        <dt>Custo final da decisão</dt>
                         <dd>{formatCurrency(selectedDecision.projected_decision_cost)}</dd>
                       </div>
                     )}
                     {selectedDecision.optimized_savings !== null && (
                       <div>
-                        <dt>Economia otimizada</dt>
+                        <dt>Economia obtida</dt>
                         <dd className={styles.optimizedValue}>
                           {formatCurrency(selectedDecision.optimized_savings)}
                         </dd>
@@ -456,9 +611,15 @@ export function BankDashboard() {
                     )}
                   </dl>
 
+
                   <button
                     className={styles.approveButton}
-                    disabled={selectedDecision.bank_status === "approved" || approvingId !== null}
+                    disabled={
+                      selectedDecision.bank_status === "approved" ||
+                      approvingId !== null ||
+                      reviewingId !== null ||
+                      !reviewedDecision
+                    }
                     onClick={() => void approveSelectedDecision()}
                     type="button"
                   >
@@ -470,9 +631,9 @@ export function BankDashboard() {
                       <ArrowRight size={16} />
                     )}
                     {approvingId === selectedDecision.id
-                      ? "Encaminhando"
+                      ? "Aguardando resultado"
                       : selectedDecision.bank_status === "approved"
-                        ? "Decisão encaminhada"
+                        ? "Resultado registrado"
                         : "Prosseguir com a decisão"}
                   </button>
                 </article>
@@ -485,26 +646,13 @@ export function BankDashboard() {
           <div className={styles.sectionHeading}>
             <div>
               <span>Efetividade</span>
-              <h2>Resultado projetado das decisões encaminhadas</h2>
+              <h2>Resultados das decisões encaminhadas</h2>
             </div>
-            <small>
-              Economia = condenação-base ({formatPercent(metrics.historical_condemnation_ratio)}
-              {" × valor da causa) − custo da decisão. Base histórica: "}
-              {new Intl.NumberFormat("pt-BR").format(metrics.historical_sample_size)} casos de
-              parcial procedência.
-            </small>
           </div>
           <div className={styles.effectivenessGrid}>
             <article className={styles.savingsCard}>
-              <span>Economia otimizada acumulada</span>
+              <span>Economia acumulada</span>
               <strong>{formatCurrency(metrics.estimated_savings)}</strong>
-              <p className={styles.economyFormula}>
-                {formatCurrency(metrics.estimated_condemnation_total)} de condenação-base
-                {" − "}
-                {formatCurrency(metrics.optimized_decision_cost)} de custo projetado
-                {" · "}
-                {formatPercent(metrics.relative_savings)} de economia relativa
-              </p>
               <div className={styles.outcomeLegend}>
                 <span><i className={styles.favorableSwatch} /> Favorável</span>
                 <span><i className={styles.unfavorableSwatch} /> Desfavorável</span>
@@ -545,21 +693,16 @@ export function BankDashboard() {
             </article>
             <div className={styles.effectivenessMetrics}>
               <article>
-                <span>Condenação-base estimada</span>
+                <span>Condenação-base</span>
                 <strong>{formatCurrency(metrics.estimated_condemnation_total)}</strong>
                 <small>
                   {formatPercent(metrics.historical_condemnation_ratio)} do valor das causas
                 </small>
               </article>
               <article>
-                <span>Custo projetado das decisões</span>
+                <span>Custo realizado das decisões</span>
                 <strong>{formatCurrency(metrics.optimized_decision_cost)}</strong>
-                <small>Acordos aceitos e caminhos desfavoráveis</small>
-              </article>
-              <article className={styles.favorableMetric}>
-                <span>Economia relativa</span>
-                <strong>{formatPercent(metrics.relative_savings)}</strong>
-                <small>{metrics.favorable_count} favoráveis · {metrics.unfavorable_count} desfavoráveis</small>
+                <small>Acordos concluídos e causas desfavoráveis</small>
               </article>
             </div>
           </div>

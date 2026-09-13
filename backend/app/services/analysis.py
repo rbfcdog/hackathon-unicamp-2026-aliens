@@ -159,6 +159,9 @@ class AnalysisService:
         self,
         session: AsyncSession,
         case_number: str,
+        *,
+        analysis_review_mode: str = "standard",
+        lawyer_justification: str | None = None,
     ) -> AnalysisResponse:
         documents = await process_document_service.list(session, case_number)
         process = await legal_process_service.get_by_case_number(
@@ -175,6 +178,8 @@ class AnalysisService:
         request_values: dict[str, object] = {
             "case_number": documents.case_number,
             "documents": document_references,
+            "analysis_review_mode": analysis_review_mode,
+            "lawyer_justification": lawyer_justification,
         }
         if not document_references:
             if process is None:

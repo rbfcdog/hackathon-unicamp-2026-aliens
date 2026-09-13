@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import BinaryIO
 
 from langchain_openai import ChatOpenAI
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -226,38 +227,47 @@ class JudgeService:
             logger.exception("Judge document review failed", extra={"trace_id": str(trace_id)})
             raise JudgeExecutionError("Judge document review failed") from exc
 
-        decision = JudgeDecision.model_validate(result["decision"])
-        consulted = result["consulted_documents"]
-        unreadable = result["unreadable_documents"]
-        consulted_set = set(consulted)
-        invalid_citations = {
-            citation.document_path
-            for finding in decision.findings
-            for citation in finding.citations
-            if citation.document_path not in consulted_set
-        }
-        if invalid_citations:
-            invalid = ", ".join(sorted(invalid_citations))
-            raise JudgeOutputError(
-                f"Model cited documents that were not successfully read: {invalid}"
-            )
+        try:
+            decision = JudgeDecision.model_validate(result["decision"])
+            consulted = result["consulted_documents"]
+            unreadable = result["unreadable_documents"]
+            consulted_set = set(consulted)
+            invalid_citations = {
+                citation.document_path
+                for finding in decision.findings
+                for citation in finding.citations
+                if citation.document_path not in consulted_set
+            }
+            if invalid_citations:
+                invalid = ", ".join(sorted(invalid_citations))
+                raise JudgeOutputError(
+                    f"Model cited documents that were not successfully read: {invalid}"
+                )
 
-        return JudgeReviewResponse(
-            **decision.model_dump(mode="python"),
-            case_number=request.case_number,
-            consulted_documents=consulted,
-            unreadable_documents=unreadable,
-            model=settings.openai_model,
-            trace_id=trace_id,
-            langsmith_project=settings.langsmith_project,
-            tracing_enabled=settings.langsmith_enabled,
-            ml_analysis=result["ml_analysis"],
-            ml_tool_errors=result["ml_tool_errors"],
-            model_card_consulted=result["model_card_consulted"],
-            strategy=result["strategy"],
-            document_node_reads=result["document_node_reads"],
-            process_data=process_data,
-        )
+            return JudgeReviewResponse(
+                **decision.model_dump(mode="python"),
+                case_number=request.case_number,
+                consulted_documents=consulted,
+                unreadable_documents=unreadable,
+                model=settings.openai_model,
+                trace_id=trace_id,
+                langsmith_project=settings.langsmith_project,
+                tracing_enabled=settings.langsmith_enabled,
+                ml_analysis=result["ml_analysis"],
+                ml_tool_errors=result["ml_tool_errors"],
+                model_card_consulted=result["model_card_consulted"],
+                strategy=result["strategy"],
+                document_node_reads=result["document_node_reads"],
+                process_data=process_data,
+            )
+        except JudgeOutputError:
+            raise
+        except (KeyError, TypeError, ValidationError) as exc:
+            logger.exception(
+                "Judge returned an invalid review payload",
+                extra={"trace_id": str(trace_id)},
+            )
+            raise JudgeOutputError("Judge returned an invalid review payload") from exc
 
 
 judge_service = JudgeService()

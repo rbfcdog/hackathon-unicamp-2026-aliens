@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ChartColumnBig, FilePlus2, Landmark, Menu, Search, X } from "lucide-react";
+import { ChartColumnBig, FilePlus2, Menu, Search, X } from "lucide-react";
 import { CaseWorkspace } from "@/components/case-workspace";
 import {
   NewAnalysisDialog,
@@ -13,6 +12,13 @@ import type { AnalysisResponse, LegalProcess } from "@/lib/types";
 
 type BusyState = "processes" | "draft" | null;
 type WorkspaceView = "chat" | "financial";
+type InitialDocumentUpload = {
+  completed: number;
+  currentDocumentName: string | null;
+  error: string | null;
+  total: number;
+};
+
 
 function mergeProcessSnapshots(
   current: LegalProcess[],
@@ -37,6 +43,10 @@ export default function Home() {
   const [connectionRevision, setConnectionRevision] = useState(0);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
   const [newProcessOpen, setNewProcessOpen] = useState(false);
+  const [initialDocumentUploads, setInitialDocumentUploads] = useState<
+    Record<string, InitialDocumentUpload>
+  >({});
+
 
   useEffect(() => {
     let active = true;
@@ -119,32 +129,65 @@ export default function Home() {
     setBusy("draft");
     setError(null);
     try {
-      const { documents, title, location, subject, ...analysisInput } = payload;
-      const created = await apiFetch<LegalProcess>("/v1/processes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...analysisInput,
-          ...(title ? { title } : {}),
-          ...(location ? { location } : {}),
-          ...(subject ? { subject } : {}),
-        }),
-      });
+      const {
+        documents,
+        case_number: caseNumber,
+        title,
+        state,
+        sub_subject: subSubject,
+        claim_amount: claimAmount,
+        evidence,
+      } = payload;
+      const hasCompleteInputs =
+        caseNumber !== undefined &&
+        state !== undefined &&
+        claimAmount !== undefined;
+      let created: LegalProcess;
 
-      if (documents.length === 0) {
-        await apiFetch<AnalysisResponse>("/v1/analyses", {
+      if (hasCompleteInputs) {
+        const analysisInput = {
+          case_number: caseNumber,
+          state,
+          sub_subject: subSubject,
+          claim_amount: claimAmount,
+          evidence,
+        };
+        created = await apiFetch<LegalProcess>("/v1/processes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(analysisInput),
+          body: JSON.stringify({
+            ...analysisInput,
+            ...(title ? { title } : {}),
+          }),
         });
+
+        if (documents.length === 0) {
+          await apiFetch<AnalysisResponse>("/v1/analyses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(analysisInput),
+          });
+        }
       } else {
-        for (const document of documents) {
-          const form = new FormData();
-          form.append("file", document.file);
-          form.append("document_type", document.documentType);
-          await apiFetch(
-            `/v1/processes/${encodeURIComponent(created.case_number)}/documents`,
-            { method: "POST", body: form },
+        created = await apiFetch<LegalProcess>("/v1/processes/drafts", {
+          method: "POST",
+        });
+        const hasEvidence = Object.values(evidence).some(Boolean);
+        const draftUpdate = {
+          ...(caseNumber ? { case_number: caseNumber } : {}),
+          ...(title ? { title } : {}),
+          ...(subSubject === "fraud" ? { sub_subject: subSubject } : {}),
+          ...(claimAmount !== undefined ? { claim_amount: claimAmount } : {}),
+          ...(hasEvidence ? { evidence } : {}),
+        };
+        if (Object.keys(draftUpdate).length > 0) {
+          created = await apiFetch<LegalProcess>(
+            `/v1/processes/${encodeURIComponent(created.case_number)}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(draftUpdate),
+            },
           );
         }
       }
@@ -152,6 +195,87 @@ export default function Home() {
       setProcesses((current) => mergeProcessSnapshots(current, [created]));
       setSelectedProcess(created);
       setWorkspaceView("chat");
+
+      if (documents.length === 0) return;
+
+      setInitialDocumentUploads((current) => ({
+        ...current,
+        [created.id]: {
+          completed: 0,
+          currentDocumentName: documents[0]?.file.name ?? null,
+          error: null,
+          total: documents.length,
+        },
+      }));
+
+      void (async () => {
+        let completed = 0;
+        let uploadsCompleted = false;
+        try {
+          for (const [index, document] of documents.entries()) {
+            setInitialDocumentUploads((current) => ({
+              ...current,
+              [created.id]: {
+                completed,
+                currentDocumentName: document.file.name,
+                error: null,
+                total: documents.length,
+              },
+            }));
+            const form = new FormData();
+            form.append("file", document.file);
+            form.append("document_type", document.documentType);
+            await apiFetch(
+              `/v1/processes/${encodeURIComponent(created.case_number)}/documents`,
+              { method: "POST", body: form },
+            );
+            completed = index + 1;
+            setInitialDocumentUploads((current) => ({
+              ...current,
+              [created.id]: {
+                completed,
+                currentDocumentName: documents[index + 1]?.file.name ?? document.file.name,
+                error: null,
+                total: documents.length,
+              },
+            }));
+          }
+          uploadsCompleted = true;
+          const renamed = await apiFetch<LegalProcess>(
+            `/v1/processes/${encodeURIComponent(created.case_number)}/infer-title`,
+            { method: "POST" },
+          );
+          setProcesses((current) => mergeProcessSnapshots(current, [renamed]));
+          setSelectedProcess((current) =>
+            current?.id === created.id ? renamed : current,
+          );
+          setDraftProcess((current) => {
+            if (current?.id !== created.id) return current;
+            return renamed.is_draft ? renamed : null;
+          });
+          setInitialDocumentUploads((current) => {
+            const remaining = { ...current };
+            delete remaining[created.id];
+            return remaining;
+          });
+        } catch (caught: unknown) {
+          const message = uploadsCompleted
+            ? "Os documentos foram adicionados, mas não foi possível sugerir o nome."
+            : caught instanceof Error
+              ? caught.message
+              : "Os documentos iniciais não puderam ser processados.";
+          setInitialDocumentUploads((current) => ({
+            ...current,
+            [created.id]: {
+              completed,
+              currentDocumentName: documents[completed]?.file.name ?? null,
+              error: message,
+              total: documents.length,
+            },
+          }));
+        }
+      })();
+
     } finally {
       setBusy(null);
     }
@@ -167,6 +291,10 @@ export default function Home() {
       )
     : processes;
   const activeProcess = selectedProcess ?? draftProcess;
+  const initialDocumentUpload = activeProcess
+    ? initialDocumentUploads[activeProcess.id]
+    : undefined;
+
 
   function chooseProcess(legalProcess: LegalProcess) {
     setSelectedProcess(legalProcess);
@@ -263,9 +391,9 @@ export default function Home() {
                 >
                   <span>
                     <strong>{legalProcess.title}</strong>
-                    <small>
-                      {legalProcess.is_draft ? "Sem informações" : legalProcess.case_number}
-                    </small>
+                    {!legalProcess.is_draft && (
+                      <small>{legalProcess.case_number}</small>
+                    )}
                   </span>
                 </button>
                 <button
@@ -289,10 +417,6 @@ export default function Home() {
             )}
           </div>
         </div>
-        <Link className="sidebar-admin-link" href="/banco">
-          <Landmark size={15} />
-          Administração bancária
-        </Link>
       </aside>
 
       {mobileNavOpen && (
@@ -325,6 +449,11 @@ export default function Home() {
           {activeProcess ? (
             <CaseWorkspace
               key={activeProcess.id}
+              initialDocumentUploadCompleted={initialDocumentUpload?.completed ?? 0}
+              initialDocumentUploadCurrentName={initialDocumentUpload?.currentDocumentName ?? null}
+              initialDocumentUploadError={initialDocumentUpload?.error ?? null}
+              initialDocumentUploadTotal={initialDocumentUpload?.total ?? 0}
+              initialDocumentsUploading={initialDocumentUpload?.error === null}
               legalProcess={activeProcess}
               onBack={returnHome}
               onProcessUpdated={updateProcessSnapshot}

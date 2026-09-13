@@ -33,15 +33,16 @@ _AGENT_SYSTEM_PROMPT = (
     "Diferencie alegação, documento comprobatório, contradição e ausência de prova.\n"
     "Registre referências com o caminho exato e o marcador de página, planilha ou linha "
     "retornado pela ferramenta.\n"
-    "A estimativa de ML é calculada deterministicamente antes da análise usando a linha "
-    "pré-processual ou os tipos dos documentos submetidos. Não tente recalcular nem alterar "
-    "seus inputs.\n"
-    "Antes de interpretar a estimativa, consulte inspect_risk_model_card. Trate ML como "
-    "apoio estatístico, nunca como prova ou autoridade para decidir.\n"
-    "Nunca use valor pago, condenação, acordo ou qualquer dado posterior ao resultado "
-    "como input, evidência ou justificativa do ML.\n"
+    "A estimativa operacional já foi fornecida como dado de apoio; não a recalcule nem altere "
+    "os dados de entrada. Ela não substitui prova, fundamentação jurídica ou revisão humana.\n"
+    "Nunca use valor pago, condenação, acordo ou qualquer dado posterior ao resultado como "
+    "dado de entrada ou justificativa da estimativa.\n"
     "Se a prova não sustentar uma conclusão, indique insuficiência em vez de presumir.\n"
-    "Esta análise é assistiva e não substitui decisão judicial humana."
+    "Esta análise é assistiva e não substitui decisão judicial humana.\n"
+    "Nunca mencione inteligência artificial, IA, modelos, algoritmos, aprendizado de máquina, "
+    "ML, regressão, ensemble, método estatístico, classificação, inferência, treinamento, "
+    "versões internas ou detalhes técnicos de cálculo. Apresente conclusões como análise "
+    "documental, jurídica e econômica."
 )
 
 _FINALIZER_SYSTEM_PROMPT = (
@@ -51,9 +52,13 @@ _FINALIZER_SYSTEM_PROMPT = (
     "Não cite um documento que falhou na leitura. Não trate alegações como fatos provados.\n"
     "Use insufficient_evidence quando os documentos não permitirem fundamentar grant, deny "
     "ou partial_grant.\n"
-    "Uma estimativa de ML é apoio estatístico e não pode substituir prova, fundamentação "
+    "A estimativa operacional é apenas dado de apoio e não pode substituir prova, fundamentação "
     "jurídica ou revisão humana.\n"
-    "O campo confidence mede a suficiência da prova documental, não certeza jurídica abstrata."
+    "O campo confidence mede a suficiência da prova documental, não certeza jurídica abstrata.\n"
+    "Nunca mencione inteligência artificial, IA, modelos, algoritmos, aprendizado de máquina, "
+    "ML, regressão, ensemble, método estatístico, classificação, inferência, treinamento, "
+    "versões internas ou detalhes técnicos de cálculo. Apresente conclusões como análise "
+    "documental, jurídica e econômica."
 )
 
 
@@ -216,12 +221,12 @@ def _estimate_resolved_model(state: JudgeState) -> dict[str, object]:
         evidence_document_paths=inputs.evidence_document_paths,
     )
     if payload["status"] != "ok":
-        error = str(payload.get("error", "Unknown deterministic ML error"))
+        error = str(payload.get("error", "Falha ao calcular a estimativa operacional"))
         return {
             "ml_analysis": None,
             "ml_tool_errors": [error],
             "messages": [
-                HumanMessage(content=f"Falha na inferência determinística do ML: {error}")
+                HumanMessage(content=f"Falha ao calcular a estimativa operacional: {error}")
             ],
         }
     ml_analysis = {
@@ -235,8 +240,8 @@ def _estimate_resolved_model(state: JudgeState) -> dict[str, object]:
         "messages": [
             HumanMessage(
                 content=(
-                    "Resultado determinístico do ensemble para apoio estatístico; não altere "
-                    "os inputs nem trate a estimativa como prova:\n"
+                    "Estimativa operacional para apoiar a análise; não altere os dados de "
+                    "entrada nem trate a estimativa como prova:\n"
                     f"{json.dumps(ml_analysis, ensure_ascii=False)}"
                 )
             )

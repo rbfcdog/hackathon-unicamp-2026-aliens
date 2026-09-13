@@ -29,10 +29,6 @@ const percentage = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,
 });
 
-const decimal = new Intl.NumberFormat("pt-BR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
 
 const RECOMMENDATION_LABEL = {
   agreement: "Propor acordo",
@@ -40,10 +36,6 @@ const RECOMMENDATION_LABEL = {
   human_review: "Revisão humana",
 };
 
-const COMPONENT_LABEL: Record<string, string> = {
-  logistic_regression: "Regressão logística",
-  xgboost: "XGBoost",
-};
 
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
@@ -75,7 +67,7 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
     ? "Revisão necessária"
     : RECOMMENDATION_LABEL[result.recommendation];
   const explanation = pricingUnavailable
-    ? "O risco de perda pode ser classificado com a UF, o tipo do processo e as evidências. Informe o valor da causa para calcular a condenação esperada, o custo da defesa e a faixa de acordo."
+    ? "A avaliação de risco considera a UF, o tipo do processo e as evidências disponíveis. Informe o valor da causa para calcular a condenação esperada, o custo da defesa e a faixa de acordo."
     : result.explanation;
   const economics =
     !pricingUnavailable &&
@@ -90,15 +82,6 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
           const fixedDefenseCost = roundCurrency(
             Math.max(0, expectedDefenseCost - riskAdjustedLoss),
           );
-          const components = Object.entries(result.component_probabilities)
-            .map(([name, probability]) => ({
-              name,
-              probability,
-              expectedDefenseCost: roundCurrency(
-                fixedDefenseCost + probability * expectedCondemnation,
-              ),
-            }))
-            .sort((left, right) => left.expectedDefenseCost - right.expectedDefenseCost);
           const evidence = result.model_inputs?.evidence;
           const availableEvidence = evidence
             ? Object.values(evidence).filter(Boolean).length
@@ -109,10 +92,7 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
             expectedDefenseCost,
             riskAdjustedLoss,
             fixedDefenseCost,
-            components,
             availableEvidence,
-            minimumCost: components.at(0)?.expectedDefenseCost,
-            maximumCost: components.at(-1)?.expectedDefenseCost,
           };
         })()
       : null;
@@ -121,7 +101,7 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
     <section className="result-panel" aria-label="Resultado da análise">
       <div className="result-hero">
         <div>
-          <span className="section-kicker">Recomendação da política</span>
+          <span className="section-kicker">Recomendação</span>
           <h2>{recommendationLabel}</h2>
           <p>{explanation}</p>
         </div>
@@ -187,9 +167,7 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
               <span>
                 {economics.availableEvidence === null
                   ? "Base documental avaliada"
-                  : `${economics.availableEvidence}/6 documentos`}
-                {" · "}
-                {decimal.format(result.model_disagreement * 100)} p.p. de divergência
+                  : `${economics.availableEvidence}/6 documentos avaliados`}
               </span>
             </div>
           </header>
@@ -255,33 +233,6 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
             </div>
           </div>
 
-          {economics.components.length > 0 && (
-            <div className="model-sensitivity">
-              <div className="model-sensitivity-heading">
-                <div>
-                  <span className="section-kicker">Teste de sensibilidade</span>
-                  <strong>Quanto cada modelo mudaria o custo</strong>
-                </div>
-                {economics.minimumCost !== undefined &&
-                  economics.maximumCost !== undefined && (
-                    <span>
-                      Faixa: {preciseCurrency.format(economics.minimumCost)}
-                      {" — "}
-                      {preciseCurrency.format(economics.maximumCost)}
-                    </span>
-                  )}
-              </div>
-              <div className="model-sensitivity-rows">
-                {economics.components.map((component) => (
-                  <div key={component.name}>
-                    <span>{COMPONENT_LABEL[component.name] ?? component.name}</span>
-                    <strong>{percentage.format(component.probability)}</strong>
-                    <span>{preciseCurrency.format(component.expectedDefenseCost)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
       )}
 
@@ -298,11 +249,6 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
         />
       </div>
 
-      <footer className="audit-footer">
-        <span>Política {result.policy_version}</span>
-        <span>Modelo {result.model_version}</span>
-        <span>ID {analysis.id.slice(0, 8)}</span>
-      </footer>
     </section>
   );
 }

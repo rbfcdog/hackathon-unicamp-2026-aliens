@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -26,10 +28,52 @@ SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 logger = logging.getLogger(__name__)
 
+_REVIEW_TARGET_PATTERN = re.compile(
+    r"\b(?:acordo|defesa|revisao humana|decisao|recomendacao|justificativa|fundamentacao)\b"
+)
+_REVIEW_ACTION_PATTERN = re.compile(
+    r"\b(?:revise|revisar|revisao|confronte|confrontar|conteste|contestar|"
+    r"critique|criticar|valide|validar|avalie|avaliar|verifique|verificar|"
+    r"questione|questionar|audite|auditar)\b"
+)
+_REVIEW_RATIONALE_PATTERN = re.compile(
+    r"\b(?:porque|pois|ja que|diante de|com base em|considerando|tendo em vista)\b"
+)
+_REVIEW_POSITION_PATTERN = re.compile(
+    r"\b(?:e adequada|e recomendavel|deve ser|deveria ser|recomendo|"
+    r"recomendamos|sugiro|sugerimos)\b"
+)
 
-async def _refresh_process_analysis(session: AsyncSession, case_number: str) -> None:
+
+def _message_requests_documentary_review(message: str) -> bool:
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", message).lower()
+        if not unicodedata.combining(character)
+    )
+    if not _REVIEW_TARGET_PATTERN.search(normalized):
+        return False
+    if _REVIEW_ACTION_PATTERN.search(normalized) or _REVIEW_RATIONALE_PATTERN.search(
+        normalized
+    ):
+        return True
+    return "?" not in normalized and bool(_REVIEW_POSITION_PATTERN.search(normalized))
+
+
+async def _refresh_process_analysis(
+    session: AsyncSession,
+    case_number: str,
+    *,
+    analysis_review_mode: str = "standard",
+    lawyer_justification: str | None = None,
+) -> None:
     try:
-        await analysis_service.refresh_for_process(session, case_number)
+        await analysis_service.refresh_for_process(
+            session,
+            case_number,
+            analysis_review_mode=analysis_review_mode,
+            lawyer_justification=lawyer_justification,
+        )
     except (AnalysisInputError, AnalysisExecutionError):
         logger.warning("Automatic process analysis refresh failed", exc_info=True)
 
@@ -214,7 +258,22 @@ async def stream_process_chat_message(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    await _refresh_process_analysis(session, context.case_number)
+    analysis_review_mode = (
+        "agreement_justification"
+        if payload.analysis_review_mode == "agreement_justification"
+        or _message_requests_documentary_review(payload.message)
+        else "standard"
+    )
+    await _refresh_process_analysis(
+        session,
+        context.case_number,
+        analysis_review_mode=analysis_review_mode,
+        lawyer_justification=(
+            payload.message
+            if analysis_review_mode == "agreement_justification"
+            else None
+        ),
+    )
     completion: ServerSentEvent | None = None
     async for stream_event in chat_service.stream(context):
         if stream_event.event == "complete":

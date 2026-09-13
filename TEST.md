@@ -233,9 +233,9 @@ O workbook padrão é `datasets/Hackaton_Enter_Base_Candidatos.xlsx`. Para escol
 {{baseUrl}}/v1/process-data/{{processNumber}}?workbook_path=datasets/outro.xlsx
 ```
 
-**Esperado:** `200 OK`. Verifique `state`, `subject`, `sub_subject`, `claim_amount`,
-`evidence` e `source_rows`. A resposta lista em `excluded_post_outcome_columns` os campos
-removidos deterministicamente.
+**Esperado:** `200 OK`. Verifique `state`, `sub_subject`, `claim_amount`, `evidence` e
+`source_rows`. A resposta lista em `excluded_post_outcome_columns` os campos removidos
+deterministicamente.
 
 ---
 

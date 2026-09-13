@@ -1,3 +1,4 @@
+import json
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -13,12 +14,19 @@ from app.schemas.bank import (
     BankDecisionItem,
     BankMonthlyEffectiveness,
 )
+from app.schemas.documents import DocumentReference
+from app.schemas.judge import JudgeReviewRequest, JudgeReviewResponse
+from app.services.judge import judge_service
+from app.services.process_documents import process_document_service
 
 HISTORICAL_PARTIAL_PROCEDENCE_SAMPLE = 12_248
 HISTORICAL_CONDEMNATION_RATIO = 0.6223546701502286
 
 
 class BankDashboardService:
+    def __init__(self) -> None:
+        self._judge_reviews: dict[uuid.UUID, JudgeReviewResponse] = {}
+
     @staticmethod
     def _number(value: object) -> float:
         try:
@@ -71,8 +79,8 @@ class BankDashboardService:
             success_probability = 1 - loss_probability
             outcome = "favorable" if success_probability >= 0.5 else "unfavorable"
             reason = (
-                "A defesa tem probabilidade projetada de êxito de "
-                f"{success_probability:.1%}, calculada a partir do risco de perda salvo."
+                "Desfecho calculado a partir de uma chance de êxito de "
+                f"{success_probability:.1%}, calculada com o risco de perda registrado."
             )
             return outcome, reason.replace(".", ",", 1)
 
@@ -105,6 +113,18 @@ class BankDashboardService:
         agreement_range = model_decision.get("agreement_range") or {}
         recommended_amount = agreement_range.get("target")
         justification = decision.justification.strip() if decision.justification else None
+        outcome_reason = decision.projected_outcome_reason
+        if outcome_reason:
+            outcome_reason = outcome_reason.replace(
+                "A defesa tem probabilidade projetada de êxito de",
+                "Desfecho calculado a partir de uma chance de êxito de",
+            ).replace(
+                "Resultado simulado a partir de uma chance de êxito de",
+                "Desfecho calculado a partir de uma chance de êxito de",
+            ).replace(
+                "calculada a partir do risco de perda salvo.",
+                "calculada com o risco de perda registrado.",
+            )
         (
             historical_estimated_condemnation,
             projected_decision_cost,
@@ -144,7 +164,7 @@ class BankDashboardService:
                 1,
             ),
             projected_outcome=decision.projected_outcome,
-            projected_outcome_reason=decision.projected_outcome_reason,
+            projected_outcome_reason=outcome_reason,
             created_at=decision.created_at,
             bank_reviewed_at=decision.bank_reviewed_at,
         )
@@ -265,18 +285,79 @@ class BankDashboardService:
             decisions=items,
         )
 
-    async def approve_decision(
+    async def _decision_and_process(
         self,
         session: AsyncSession,
         decision_id: uuid.UUID,
-    ) -> BankDecisionItem:
+    ) -> tuple[ProcessDecision, LegalProcess]:
         decision = await session.get(ProcessDecision, decision_id)
         if decision is None:
             raise LookupError("decision not found")
         process = await session.get(LegalProcess, decision.process_id)
         if process is None:
             raise LookupError("process not found")
+        return decision, process
 
+    @staticmethod
+    def _judge_question(decision: ProcessDecision) -> str:
+        payload = {
+            "recommendation_submitted": decision.recommendation,
+            "agreement_amount": (
+                float(decision.amount) if decision.amount is not None else None
+            ),
+            "lawyer_reasoning": decision.justification,
+            "model_reasoning": decision.model_snapshot or {},
+        }
+        return (
+            "Revise, como juiz independente, se a decisão operacional submetida "
+            "pelo advogado é compatível com todos os documentos autorizados e com "
+            "o racional abaixo. Leia obrigatoriamente cada documento, trate "
+            "lacunas como insuficiência de prova e explique se há suporte, "
+            "contradição ou ausência de prova para a recomendação. Não aprove nem "
+            "execute a decisão: produza apenas o parecer judicial estruturado.\n\n"
+            f"Decisão submetida:\n{json.dumps(payload, ensure_ascii=False, default=str)}"
+        )
+
+    async def review_decision(
+        self,
+        session: AsyncSession,
+        decision_id: uuid.UUID,
+    ) -> JudgeReviewResponse:
+        cached = self._judge_reviews.get(decision_id)
+        if cached is not None:
+            return cached
+        decision, process = await self._decision_and_process(session, decision_id)
+        documents = await process_document_service.list(session, process.case_number)
+        if not documents.documents:
+            raise ValueError(
+                "Envie ao menos um documento do processo para a revisão do agente juiz."
+            )
+        request = JudgeReviewRequest(
+            case_number=process.case_number,
+            question=self._judge_question(decision),
+            documents=[
+                DocumentReference(
+                    path=document.path,
+                    document_type=document.document_type,
+                )
+                for document in documents.documents
+            ],
+        )
+        review = await judge_service.review(session, request)
+        self._judge_reviews[decision_id] = review
+        return review
+
+    async def approve_decision(
+        self,
+        session: AsyncSession,
+        decision_id: uuid.UUID,
+    ) -> BankDecisionItem:
+        # Execute the independent review within the approval path as well as from
+        # the UI action: a client cannot bypass the document-based judge review.
+        await self.review_decision(session, decision_id)
+        # JudgeService deliberately rolls back its read-only transaction before
+        # its LLM loop. Re-load ORM rows after that rollback before mutating them.
+        decision, process = await self._decision_and_process(session, decision_id)
         outcome, reason = self._project_outcome(decision)
         if decision.bank_status != "approved":
             decision.bank_status = "approved"

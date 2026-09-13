@@ -20,9 +20,7 @@ export type LegalProcess = {
   id: string;
   case_number: string;
   title: string;
-  location: string;
   state: string;
-  subject: string;
   sub_subject: "fraud" | "generic";
   claim_amount: number;
   evidence: EvidenceInput;
@@ -111,7 +109,6 @@ export type ProcessDataRecord = {
   workbook_path: string;
   process_number: string;
   state: string;
-  subject: string;
   sub_subject: "fraud" | "generic";
   claim_amount: number;
   evidence: EvidenceInput;
@@ -123,6 +120,17 @@ export type AgreementRange = {
   opening: number;
   target: number;
   ceiling: number;
+};
+
+export type AgreementJustificationReview = {
+  verdict:
+    | "supported"
+    | "partially_supported"
+    | "insufficient_evidence"
+    | "not_supported";
+  summary: string;
+  supporting_evidence: string[];
+  missing_documents: string[];
 };
 
 export type SubmittedProcessDecision = {
@@ -142,13 +150,11 @@ export type SubmittedProcessDecision = {
 export type ProcessFinancialOverview = {
   case_number: string;
   title: string;
-  location: string;
   updated_at: string;
   input_source: "workbook_row" | "process_registry";
   workbook_path: string;
   source_rows: Record<string, number>;
   state: string;
-  subject: string;
   sub_subject: "fraud" | "generic";
   claim_amount: number;
   evidence: EvidenceInput;
@@ -174,6 +180,12 @@ export type ProcessFinancialOverview = {
     human_review_reason: string | null;
   } | null;
   latest_decision: SubmittedProcessDecision | null;
+  agreement_justification_review: AgreementJustificationReview | null;
+  decision_justifications: {
+    agreement: string;
+    defense: string;
+    human_review: string;
+  } | null;
 };
 export type DecisionChoice = "agreement" | "defense" | "human_review";
 
@@ -201,6 +213,26 @@ export type BankDecisionItem = {
   projected_outcome: "favorable" | "unfavorable" | null;
   projected_outcome_reason: string | null;
   bank_reviewed_at: string | null;
+};
+
+export type BankJudgeReview = {
+  disposition: "grant_claim" | "deny_claim" | "partial_grant" | "insufficient_evidence";
+  confidence: number;
+  summary: string;
+  findings: Array<{
+    issue: string;
+    conclusion: string;
+    reasoning: string;
+  }>;
+  missing_evidence: string[];
+  case_number: string;
+  consulted_documents: string[];
+  unreadable_documents: string[];
+};
+
+export type JudgeChatTurn = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type BankDashboardResponse = {

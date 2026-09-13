@@ -1,3 +1,5 @@
+# Process API schemas keep the lawyer workspace and persistence boundary explicit.
+
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -5,15 +7,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.documents import canonical_process_number
-from app.schemas.analysis import AgreementRange, EvidenceInput
+from app.schemas.analysis import (
+    AgreementJustificationReview,
+    AgreementRange,
+    DecisionJustifications,
+    EvidenceInput,
+)
 
 
 class LegalProcessCreate(BaseModel):
     case_number: str = Field(min_length=1, max_length=64)
     title: str | None = Field(default=None, max_length=160)
-    location: str | None = Field(default=None, max_length=160)
     state: str = Field(min_length=2, max_length=2)
-    subject: str | None = Field(default=None, max_length=255)
     sub_subject: str = Field(pattern=r"^(fraud|generic)$")
     claim_amount: float = Field(gt=0)
     evidence: EvidenceInput = Field(default_factory=EvidenceInput)
@@ -35,9 +40,7 @@ class LegalProcessCreate(BaseModel):
 class LegalProcessUpdate(BaseModel):
     case_number: str | None = Field(default=None, min_length=1, max_length=64)
     title: str | None = Field(default=None, min_length=1, max_length=160)
-    location: str | None = Field(default=None, min_length=1, max_length=160)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    subject: str | None = Field(default=None, min_length=1, max_length=255)
     sub_subject: Literal["fraud", "generic"] | None = None
     claim_amount: float | None = Field(default=None, gt=0, le=1_000_000_000)
     evidence: EvidenceInput | None = None
@@ -56,7 +59,7 @@ class LegalProcessUpdate(BaseModel):
     def normalize_state(cls, value: str | None) -> str | None:
         return value.upper() if value else value
 
-    @field_validator("title", "location", "subject")
+    @field_validator("title")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         return value.strip() if value else value
@@ -72,9 +75,7 @@ class LegalProcessResponse(BaseModel):
     id: uuid.UUID
     case_number: str
     title: str
-    location: str
     state: str
-    subject: str
     sub_subject: str
     claim_amount: float
     evidence: EvidenceInput
@@ -146,13 +147,11 @@ class ProcessDecisionResponse(BaseModel):
 class ProcessFinancialOverviewResponse(BaseModel):
     case_number: str
     title: str
-    location: str
     updated_at: datetime
     input_source: Literal["workbook_row", "process_registry"]
     workbook_path: str
     source_rows: dict[str, int]
     state: str
-    subject: str
     sub_subject: Literal["fraud", "generic"]
     claim_amount: float = Field(gt=0)
     evidence: EvidenceInput
@@ -160,3 +159,27 @@ class ProcessFinancialOverviewResponse(BaseModel):
     risk: ProcessFinancialRisk | None
     decision: ProcessFinancialDecision | None
     latest_decision: ProcessDecisionResponse | None
+    agreement_justification_review: AgreementJustificationReview | None = None
+    decision_justifications: DecisionJustifications | None = None
+
+
+class EvidenceMatrixCitation(BaseModel):
+    document_path: str = Field(min_length=1)
+    document_name: str = Field(min_length=1)
+    page: int = Field(ge=1)
+
+
+class EvidenceMatrixEntry(BaseModel):
+    question: Literal[
+        "Houve contratação?",
+        "O crédito entrou na conta?",
+        "Os descontos batem?",
+        "A assinatura é compatível?",
+    ]
+    status: Literal["supported", "contradicted", "no_evidence"]
+    explanation: str = Field(min_length=1, max_length=600)
+    citations: list[EvidenceMatrixCitation] = Field(default_factory=list, max_length=3)
+
+
+class EvidenceMatrixResponse(BaseModel):
+    entries: list[EvidenceMatrixEntry] = Field(min_length=4, max_length=4)

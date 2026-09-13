@@ -9,6 +9,7 @@ from app.graph.nodes import (
     prepare_defense,
     price_agreement,
     request_human_review,
+    review_agreement_justification,
     route_recommendation,
 )
 from app.graph.state import AnalysisState
@@ -24,6 +25,7 @@ def build_analysis_graph():
     builder.add_node("prepare_defense", prepare_defense)
     builder.add_node("request_human_review", request_human_review)
     builder.add_node("explain_recommendation", explain_recommendation)
+    builder.add_node("review_agreement_justification", review_agreement_justification)
 
     builder.add_edge(START, "extract_model_inputs")
     builder.add_edge("extract_model_inputs", "assess_evidence")
@@ -41,7 +43,8 @@ def build_analysis_graph():
     builder.add_edge("price_agreement", "explain_recommendation")
     builder.add_edge("prepare_defense", "explain_recommendation")
     builder.add_edge("request_human_review", "explain_recommendation")
-    builder.add_edge("explain_recommendation", END)
+    builder.add_edge("explain_recommendation", "review_agreement_justification")
+    builder.add_edge("review_agreement_justification", END)
     return builder.compile()
 
 

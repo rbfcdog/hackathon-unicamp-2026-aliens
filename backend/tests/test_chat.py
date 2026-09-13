@@ -30,7 +30,9 @@ async def test_process_documents_and_chat_sessions_are_isolated(
 
     analysis_refreshes: list[str] = []
 
-    async def refresh_analysis(_: object, refreshed_case_number: str) -> None:
+    async def refresh_analysis(
+        _: object, refreshed_case_number: str, **__: object
+    ) -> None:
         analysis_refreshes.append(refreshed_case_number)
 
     monkeypatch.setattr(
@@ -107,13 +109,22 @@ async def test_process_documents_and_chat_sessions_are_isolated(
 async def test_chat_prompt_refreshes_analysis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    analysis_refreshes: list[str] = []
     draft_id: uuid.UUID | None = None
     chat_id: uuid.UUID | None = None
     case_number: str | None = None
 
-    async def refresh_analysis(_: object, refreshed_case_number: str) -> None:
-        analysis_refreshes.append(refreshed_case_number)
+    analysis_refreshes: list[tuple[str, str, str | None]] = []
+
+    async def refresh_analysis(
+        _: object,
+        refreshed_case_number: str,
+        *,
+        analysis_review_mode: str = "standard",
+        lawyer_justification: str | None = None,
+    ) -> None:
+        analysis_refreshes.append(
+            (refreshed_case_number, analysis_review_mode, lawyer_justification)
+        )
 
     async def completed_stream(_: ChatStreamContext):
         yield ServerSentEvent(event="complete", data={"message": {}})
@@ -144,7 +155,36 @@ async def test_chat_prompt_refreshes_analysis(
                 json={"message": "Quais documentos ainda preciso anexar?"},
             )
             assert response.status_code == 200
-            assert analysis_refreshes == [case_number]
+
+            manual_review_response = await client.post(
+                f"/v1/processes/{case_number}/chats/{chat_id}/messages/stream",
+                json={
+                    "message": "A defesa é adequada porque o crédito foi comprovado.",
+                    "analysis_review_mode": "agreement_justification",
+                },
+            )
+            assert manual_review_response.status_code == 200
+
+            inferred_review_response = await client.post(
+                f"/v1/processes/{case_number}/chats/{chat_id}/messages/stream",
+                json={
+                    "message": "Revise a justificativa de acordo diante do contrato disponível.",
+                },
+            )
+            assert inferred_review_response.status_code == 200
+            assert analysis_refreshes == [
+                (case_number, "standard", None),
+                (
+                    case_number,
+                    "agreement_justification",
+                    "A defesa é adequada porque o crédito foi comprovado.",
+                ),
+                (
+                    case_number,
+                    "agreement_justification",
+                    "Revise a justificativa de acordo diante do contrato disponível.",
+                ),
+            ]
         finally:
             async with SessionFactory() as session:
                 if chat_id is not None:

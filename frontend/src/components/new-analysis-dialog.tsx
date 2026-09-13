@@ -10,7 +10,6 @@ import {
 import { FilePlus2, FileText, ShieldCheck, X } from "lucide-react";
 import { DOCUMENT_LABELS } from "@/lib/legal-documents";
 import type {
-  AnalysisRequest,
   DocumentType,
   EvidenceInput,
   EvidenceKey,
@@ -53,10 +52,13 @@ export type PendingDocument = {
   documentType: DocumentType;
 };
 
-export type NewProcessRequest = Omit<AnalysisRequest, "documents"> & {
+export type NewProcessRequest = {
+  case_number?: string;
   title: string;
-  location: string;
-  subject: string;
+  state?: string;
+  sub_subject: "fraud" | "generic";
+  claim_amount?: number;
+  evidence: EvidenceInput;
   documents: PendingDocument[];
 };
 
@@ -79,9 +81,7 @@ function documentKey(file: File) {
 export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
   const [caseNumber, setCaseNumber] = useState("");
   const [title, setTitle] = useState("");
-  const [location, setLocation] = useState("");
-  const [subject, setSubject] = useState("");
-  const [state, setState] = useState("SP");
+  const [state, setState] = useState("");
   const [subSubject, setSubSubject] = useState<"fraud" | "generic">("generic");
   const [claimAmount, setClaimAmount] = useState("");
   const [evidence, setEvidence] = useState<EvidenceInput>(EMPTY_EVIDENCE);
@@ -91,9 +91,7 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
   const resetForm = useCallback(() => {
     setCaseNumber("");
     setTitle("");
-    setLocation("");
-    setSubject("");
-    setState("SP");
+    setState("");
     setSubSubject("generic");
     setClaimAmount("");
     setEvidence(EMPTY_EVIDENCE);
@@ -176,14 +174,19 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
     }
 
     try {
+      const normalizedCaseNumber = caseNumber.trim();
+      const normalizedState = state.trim();
+      const parsedClaimAmount = Number(claimAmount);
       await onSubmit({
-        case_number: caseNumber.trim(),
+        ...(normalizedCaseNumber ? { case_number: normalizedCaseNumber } : {}),
         title: title.trim(),
-        location: location.trim(),
-        subject: subject.trim(),
-        state,
+        ...(normalizedState ? { state: normalizedState } : {}),
         sub_subject: subSubject,
-        claim_amount: Number(claimAmount),
+        ...(
+          claimAmount.trim() !== "" && Number.isFinite(parsedClaimAmount)
+            ? { claim_amount: parsedClaimAmount }
+            : {}
+        ),
         evidence: effectiveEvidence,
         documents,
       });
@@ -235,7 +238,6 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
               maxLength={64}
               onChange={(event) => setCaseNumber(event.target.value)}
               placeholder="0000000-00.0000.0.00.0000"
-              required
               value={caseNumber}
             />
           </label>
@@ -247,7 +249,6 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
               minLength={2}
               onChange={(event) => setState(event.target.value.toUpperCase())}
               pattern="[A-Za-z]{2}"
-              required
               value={state}
             />
           </label>
@@ -275,25 +276,7 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
             />
           </label>
 
-          <label className="field">
-            <span>Localização</span>
-            <input
-              maxLength={160}
-              onChange={(event) => setLocation(event.target.value)}
-              placeholder="Comarca ou tribunal"
-              value={location}
-            />
-          </label>
 
-          <label className="field field-wide">
-            <span>Assunto</span>
-            <input
-              maxLength={255}
-              onChange={(event) => setSubject(event.target.value)}
-              placeholder="Ex.: empréstimo consignado"
-              value={subject}
-            />
-          </label>
 
           <label className="field field-wide">
             <span>Valor da causa</span>
@@ -303,7 +286,6 @@ export function NewAnalysisDialog({ open, loading, onClose, onSubmit }: Props) {
                 min="0.01"
                 onChange={(event) => setClaimAmount(event.target.value)}
                 placeholder="N/A"
-                required
                 step="0.01"
                 type="number"
                 value={claimAmount}

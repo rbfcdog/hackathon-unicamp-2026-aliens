@@ -125,7 +125,7 @@ a {
   color: var(--paper);
   background: transparent;
   font-family: var(--font-label);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.1em;
   line-height: 1;
@@ -133,7 +133,7 @@ a {
 
 .sidebar-home span {
   color: var(--amber);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -159,7 +159,7 @@ a {
   border-radius: 9px;
   color: var(--paper);
   background: var(--ledger);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   transition:
     border-color 160ms ease,
@@ -201,7 +201,7 @@ a {
   outline: 0;
   color: var(--paper);
   background: transparent;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .sidebar-search input::placeholder {
@@ -214,34 +214,11 @@ a {
   overflow-y: auto;
 }
 
-.sidebar-admin-link {
-  display: flex;
-  min-height: 42px;
-  align-items: center;
-  gap: 9px;
-  margin: auto 14px 16px;
-  padding: 0 12px;
-  border: 1px solid var(--rule-soft);
-  border-radius: 8px;
-  color: #b9c3ce;
-  background: #12171e;
-  font-size: 11px;
-}
-
-.sidebar-admin-link svg {
-  color: var(--ice);
-}
-
-.sidebar-admin-link:hover {
-  border-color: #46515f;
-  color: var(--paper);
-  background: #171d25;
-}
 
 .sidebar-section-heading {
   padding: 0 10px 8px;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -282,7 +259,7 @@ a {
 }
 
 .case-list-item strong {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -290,7 +267,7 @@ a {
   overflow: hidden;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -302,7 +279,7 @@ a {
 .empty-case-list {
   padding: 12px;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 
@@ -345,7 +322,7 @@ a {
   border-radius: 9px;
   color: #f0aeae;
   background: rgba(74, 34, 34, 0.3);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 
@@ -356,7 +333,7 @@ a {
   border-radius: 7px;
   color: var(--paper);
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 
@@ -367,7 +344,7 @@ a {
   gap: 10px;
   margin: 20px auto 0;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .spinner {
@@ -395,7 +372,7 @@ a {
   color: var(--quiet);
   background: transparent;
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -415,7 +392,7 @@ a {
 .case-heading h1 {
   margin: 8px 0 7px;
   font-family: var(--font-label);
-  font-size: clamp(29px, 3vw, 43px);
+  font-size: clamp(32px, 3.2vw, 48px);
   font-weight: 500;
   letter-spacing: -0.035em;
 }
@@ -423,7 +400,7 @@ a {
 .mono-label {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .case-meta {
@@ -441,12 +418,12 @@ a {
 .case-meta span {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
 .case-meta strong {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -467,7 +444,7 @@ a {
 
 .panel-heading h2 {
   font-family: var(--font-label);
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 500;
 }
 
@@ -509,7 +486,7 @@ a {
 
 .document-card h3 {
   margin-bottom: 3px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -517,7 +494,7 @@ a {
   overflow: hidden;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -525,7 +502,7 @@ a {
 .document-size {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 
@@ -540,7 +517,7 @@ a {
   border-radius: 9px;
   color: var(--ink);
   background: var(--amber);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   transition: background 160ms ease;
 }
@@ -559,7 +536,7 @@ a {
   border: 1px solid #653b3b;
   color: #f0aeae;
   background: rgba(74, 34, 34, 0.28);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -589,14 +566,14 @@ a {
 .result-hero h2 {
   margin: 9px 0 11px;
   font-family: var(--font-label);
-  font-size: clamp(26px, 3.3vw, 42px);
+  font-size: clamp(29px, 3.5vw, 46px);
   font-weight: 500;
 }
 
 .result-hero p {
   max-width: 740px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.7;
 }
 
@@ -628,7 +605,7 @@ a {
 
 .risk-dial strong {
   font-family: var(--font-code);
-  font-size: 27px;
+  font-size: 29px;
   font-weight: 500;
 }
 
@@ -637,7 +614,7 @@ a {
   margin-top: 4px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -682,12 +659,12 @@ a {
 
 .metric-card small {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .metric-card strong {
   font-family: var(--font-code);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
 }
 
@@ -714,14 +691,14 @@ a {
 .strategy-strip span {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
 .agreement-band strong,
 .strategy-strip strong {
   font-family: var(--font-code);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
 }
 
@@ -753,13 +730,13 @@ a {
 
 .pricing-unavailable strong {
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
 .pricing-unavailable span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -782,7 +759,7 @@ a {
 .economic-proof-heading h3 {
   margin-top: 5px;
   font-family: var(--font-label);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
 }
 
@@ -792,7 +769,7 @@ a {
   gap: 8px;
   color: var(--ice);
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .economic-proof-confidence svg {
@@ -822,7 +799,7 @@ a {
 
 .calculation-ledger-title strong {
   font-family: var(--font-label);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -840,13 +817,13 @@ a {
 
 .calculation-ledger dt {
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .calculation-ledger dd {
   color: var(--ice);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -865,7 +842,7 @@ a {
 .calculation-total dt,
 .calculation-total dd {
   color: var(--paper);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .decision-threshold {
@@ -879,71 +856,16 @@ a {
   margin: 8px 0 13px;
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: clamp(24px, 3vw, 34px);
+  font-size: clamp(27px, 3.2vw, 38px);
   font-weight: 500;
 }
 
 .decision-threshold p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
-.model-sensitivity {
-  padding: 18px 25px 22px;
-  border-top: 1px solid var(--rule);
-}
-
-.model-sensitivity-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 12px;
-}
-
-.model-sensitivity-heading > div {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.model-sensitivity-heading strong {
-  font-family: var(--font-label);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.model-sensitivity-heading > span {
-  color: var(--quiet);
-  font-family: var(--font-code);
-  font-size: 9px;
-}
-
-.model-sensitivity-rows {
-  border: 1px solid var(--rule);
-}
-
-.model-sensitivity-rows > div {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) 90px 130px;
-  gap: 16px;
-  padding: 10px 12px;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.model-sensitivity-rows > div + div {
-  border-top: 1px solid var(--rule-soft);
-}
-
-.model-sensitivity-rows strong,
-.model-sensitivity-rows span:last-child {
-  color: var(--ice);
-  font-family: var(--font-code);
-  font-weight: 500;
-  text-align: right;
-}
 
 .artifact-analysis .economic-proof-grid {
   grid-template-columns: 1fr;
@@ -955,8 +877,7 @@ a {
 }
 
 @media (max-width: 600px) {
-  .economic-proof-heading,
-  .model-sensitivity-heading {
+  .economic-proof-heading {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -970,16 +891,6 @@ a {
     text-align: left;
   }
 
-  .model-sensitivity-rows > div {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .model-sensitivity-rows span:last-child {
-    grid-column: 1 / -1;
-    padding-top: 5px;
-    border-top: 1px dashed var(--rule-soft);
-    text-align: left;
-  }
 }
 
 .strategy-strip {
@@ -1007,7 +918,7 @@ a {
   gap: 8px;
   margin-bottom: 15px;
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   text-transform: uppercase;
 }
@@ -1026,7 +937,7 @@ a {
   margin-top: 8px;
   padding-left: 13px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -1056,26 +967,26 @@ a {
   padding-top: 3px;
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .finding-card h3 {
   margin-bottom: 7px;
   font-family: var(--font-label);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
 }
 
 .finding-card strong {
   color: var(--ice);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
 .finding-card p {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
@@ -1085,7 +996,7 @@ a {
   border-left: 2px solid var(--amber);
   color: var(--muted);
   background: var(--ink);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -1094,21 +1005,10 @@ a {
   margin-top: 5px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   font-style: normal;
 }
 
-.audit-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 25px;
-  padding: 13px 24px;
-  color: var(--quiet);
-  background: var(--ink);
-  font-family: var(--font-code);
-  font-size: 8px;
-  text-transform: uppercase;
-}
 
 .dialog-backdrop {
   position: fixed;
@@ -1143,7 +1043,7 @@ a {
 
 .dialog-heading h2 {
   font-family: var(--font-label);
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 500;
 }
 
@@ -1151,7 +1051,7 @@ a {
   margin-bottom: 5px;
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -1193,7 +1093,7 @@ a {
 .evidence-fieldset legend {
   color: var(--muted);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1207,7 +1107,7 @@ a {
   outline: 0;
   color: var(--paper);
   background: var(--ink);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .field > input,
@@ -1230,7 +1130,7 @@ a {
   padding-left: 12px;
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -1249,7 +1149,7 @@ a {
 .evidence-fieldset > p {
   margin: 5px 0 12px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .evidence-options {
@@ -1267,7 +1167,7 @@ a {
   border: 1px solid var(--rule-soft);
   color: var(--muted);
   background: var(--ink);
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -1315,7 +1215,7 @@ a {
 .document-intake-heading > div > span {
   color: var(--muted);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1323,7 +1223,7 @@ a {
 .document-intake-heading p {
   margin: 5px 0 0;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .document-picker {
@@ -1337,7 +1237,7 @@ a {
   color: var(--paper);
   background: var(--ledger);
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -1388,7 +1288,7 @@ a {
 .document-intake-file span {
   overflow: hidden;
   color: var(--paper);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1396,7 +1296,7 @@ a {
 .document-intake-file small {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .document-type-select select {
@@ -1407,7 +1307,7 @@ a {
   outline: 0;
   color: var(--paper);
   background: var(--graphite);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .document-type-select select:focus {
@@ -1435,7 +1335,7 @@ a {
   border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--rule));
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, var(--ink));
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .dialog-actions {
@@ -1457,7 +1357,7 @@ a {
   color: var(--quiet);
   background: var(--ink);
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -1477,7 +1377,7 @@ a {
   padding: 13px 2px 12px;
   color: var(--quiet);
   background: transparent;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1540,7 +1440,7 @@ a {
 .process-files-heading h2 {
   margin-top: 5px;
   font-family: var(--font-label);
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 500;
 }
 
@@ -1556,7 +1456,7 @@ a {
   border-radius: 8px;
   color: var(--muted);
   background: var(--ledger);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -1596,13 +1496,13 @@ a {
 
 .chat-empty strong {
   color: var(--paper);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
 }
 
 .chat-empty p {
   max-width: 390px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -1615,7 +1515,7 @@ a {
   margin-bottom: 6px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1623,7 +1523,7 @@ a {
 .chat-message > p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.72;
 }
 
@@ -1653,7 +1553,7 @@ a {
   margin-top: 9px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .chat-prose {
@@ -1665,7 +1565,7 @@ a {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.72;
 }
 
@@ -1680,7 +1580,7 @@ a {
   color: var(--ice);
   background: rgba(91, 148, 193, 0.1);
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.2;
   text-decoration: none;
   vertical-align: baseline;
@@ -1704,7 +1604,7 @@ a {
   background: rgba(7, 10, 14, 0.24);
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .tool-call summary {
@@ -1724,7 +1624,7 @@ a {
 .tool-call summary small {
   margin-left: auto;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .tool-call > div {
@@ -1828,7 +1728,7 @@ a {
   padding: 11px 12px;
   color: var(--paper);
   background: var(--ink);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.55;
 }
 
@@ -1852,7 +1752,7 @@ a {
   bottom: 9px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
 }
 
 .process-files {
@@ -1870,7 +1770,7 @@ a {
 .process-files-heading > strong {
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -1895,7 +1795,7 @@ a {
 
 .process-file h3 {
   margin-bottom: 3px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -1903,7 +1803,7 @@ a {
   overflow: hidden;
   color: var(--muted);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1911,7 +1811,7 @@ a {
 .process-file small {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
 }
 
 .process-file > button {
@@ -1930,7 +1830,7 @@ a {
 .process-files-empty {
   padding: 20px 4px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1945,7 +1845,7 @@ a {
 .process-upload > label:first-child {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -1957,7 +1857,7 @@ a {
   padding: 0 9px;
   color: var(--paper);
   background: var(--ink);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .file-picker {
@@ -1969,7 +1869,7 @@ a {
   border: 1px dashed #455063;
   color: var(--muted);
   background: rgba(23, 28, 36, 0.55);
-  font-size: 9px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -2053,7 +1953,7 @@ a {
   border-bottom: 2px solid transparent;
   color: var(--quiet);
   background: transparent;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .workspace-tabs button:hover,
@@ -2097,7 +1997,7 @@ a {
 .chat-panel-heading h2,
 .process-files h2 {
   margin-top: 4px;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 500;
 }
 
@@ -2113,7 +2013,7 @@ a {
   border-radius: 8px;
   color: var(--muted);
   background: var(--ledger);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .quiet-button:hover:not(:disabled),
@@ -2148,13 +2048,13 @@ a {
 
 .chat-empty strong {
   color: var(--paper);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
 }
 
 .chat-empty p {
   max-width: 380px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -2178,11 +2078,11 @@ a {
   display: block;
   margin-bottom: 5px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .chat-message p {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
   white-space: pre-wrap;
 }
@@ -2190,7 +2090,7 @@ a {
 .chat-message footer {
   margin-top: 8px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 
@@ -2216,7 +2116,7 @@ a {
   outline: 0;
   padding: 3px;
   background: transparent;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -2234,7 +2134,7 @@ a {
 .chat-composer > small {
   grid-column: 1 / -1;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .process-files {
@@ -2249,7 +2149,7 @@ a {
 .process-files-heading > strong {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .process-file-list {
@@ -2272,7 +2172,7 @@ a {
 }
 
 .process-file h3 {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -2280,14 +2180,14 @@ a {
   overflow: hidden;
   margin-top: 2px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .process-file small {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .process-file > button {
@@ -2305,7 +2205,7 @@ a {
 
 .process-files-empty {
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -2319,7 +2219,7 @@ a {
 
 .process-upload > label:first-child {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .process-upload select {
@@ -2329,7 +2229,7 @@ a {
   padding: 0 10px;
   color: var(--paper);
   background: var(--ink);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .file-picker {
@@ -2342,7 +2242,7 @@ a {
   border-radius: 8px;
   color: var(--muted);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .file-picker span {
@@ -2509,7 +2409,7 @@ a {
   }
 
   .home-chat-intro h1 {
-    font-size: 32px;
+    font-size: 34px;
   }
 
   .home-chat-composer footer {
@@ -2708,7 +2608,7 @@ a {
 .workspace-case-bar h1 {
   overflow: hidden;
   margin-bottom: 3px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 550;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
@@ -2749,7 +2649,7 @@ a {
 
 .workspace-explorer-heading h2 {
   margin-top: 3px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 550;
 }
 
@@ -2804,7 +2704,7 @@ a {
 .workspace-tree-item span {
   overflow: hidden;
   min-width: 0;
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2835,7 +2735,7 @@ a {
   justify-content: center;
   margin: 0 9px 10px;
   border-radius: 7px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .workspace-folder-toggle {
@@ -2871,7 +2771,7 @@ a {
 }
 
 .workspace-folder-toggle strong {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 550;
   letter-spacing: 0.025em;
   text-transform: uppercase;
@@ -2880,7 +2780,7 @@ a {
 .workspace-folder-toggle > span {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .workspace-document-list {
@@ -2923,7 +2823,7 @@ a {
 .workspace-document-open span {
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2960,7 +2860,7 @@ a {
   gap: 8px;
   padding: 12px 9px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .workspace-upload {
@@ -2983,14 +2883,14 @@ a {
 }
 
 .workspace-upload-heading strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
 }
 
 .workspace-upload label:not(.workspace-file-picker) {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -3002,7 +2902,7 @@ a {
   border-radius: 6px;
   color: var(--muted);
   background: #10151c;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .workspace-upload select {
@@ -3026,7 +2926,28 @@ a {
 .workspace-upload-submit {
   min-height: 34px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 12px;
+}
+
+.workspace-document-processing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 8px 9px;
+  border: 1px solid rgba(244, 174, 43, 0.22);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(244, 174, 43, 0.07);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.workspace-document-processing .spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-width: 2px;
 }
 
 .workspace-file-drop {
@@ -3048,12 +2969,12 @@ a {
 }
 
 .workspace-file-drop strong {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .workspace-file-drop span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .workspace-explorer-footer {
@@ -3065,7 +2986,7 @@ a {
   border-top: 1px solid var(--rule-soft);
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .process-chat-shell .chat-panel {
@@ -3073,7 +2994,7 @@ a {
   min-width: 0;
   min-height: calc(100vh - 66px);
   max-height: calc(100vh - 66px);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
   border: 0;
   border-radius: 0;
@@ -3088,7 +3009,7 @@ a {
 
 .process-chat-shell .chat-panel-heading h2 {
   margin-top: 2px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .process-chat-shell .chat-transcript {
@@ -3102,7 +3023,15 @@ a {
 
 
 .process-chat-shell .chat-composer {
+  min-height: 60px;
   margin: 12px clamp(18px, 4vw, 54px) 18px;
+}
+
+.process-chat-shell .chat-composer textarea {
+  height: 42px;
+  min-height: 42px;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .artifact-panel {
@@ -3148,14 +3077,14 @@ a {
 .artifact-panel-heading small {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 7px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .artifact-panel-heading strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3184,7 +3113,7 @@ a {
   color: var(--quiet);
   background: #0e1218;
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .artifact-analysis {
@@ -3210,7 +3139,7 @@ a {
 .analysis-command p {
   max-width: 270px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -3218,7 +3147,7 @@ a {
   flex: 0 0 auto;
   min-height: 36px;
   border-radius: 7px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .artifact-empty {
@@ -3239,12 +3168,12 @@ a {
 .artifact-empty strong {
   margin-bottom: 7px;
   color: var(--paper);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .artifact-empty p {
   max-width: 300px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -3262,7 +3191,7 @@ a {
 }
 
 .artifact-analysis .result-hero h2 {
-  font-size: 24px;
+  font-size: 26px;
 }
 
 .artifact-analysis .risk-dial {
@@ -3276,7 +3205,7 @@ a {
 }
 
 .artifact-analysis .risk-dial strong {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .artifact-analysis .strategy-strip,
@@ -3288,9 +3217,6 @@ a {
   padding: 0 16px;
 }
 
-.artifact-analysis .audit-footer {
-  margin: 16px;
-}
 
 .process-chat-shell .chat-error {
   position: absolute;
@@ -3355,8 +3281,9 @@ a {
   }
 
   .process-chat-shell .chat-panel {
-    min-height: 620px;
-    max-height: none;
+    height: min(680px, calc(100dvh - 66px));
+    min-height: 0;
+    max-height: min(680px, calc(100dvh - 66px));
   }
 
   .artifact-panel {
@@ -3372,7 +3299,7 @@ a {
   }
 }
 
-/* Process-level financial model: live spreadsheet inputs and local ML output. */
+/* Painel financeiro do processo. */
 .case-list-entry {
   position: relative;
   display: grid;
@@ -3443,7 +3370,7 @@ a {
   border-radius: 5px;
   color: var(--quiet);
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   transition:
     color 150ms ease,
@@ -3486,14 +3413,14 @@ a {
   margin-bottom: 8px;
   color: var(--amber);
   font-family: var(--font-code);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .financial-dashboard-title h2 {
   margin-bottom: 8px;
-  font-size: clamp(30px, 3.4vw, 44px);
+  font-size: clamp(33px, 3.6vw, 49px);
   font-weight: 420;
   letter-spacing: -0.045em;
 }
@@ -3501,7 +3428,7 @@ a {
 .financial-dashboard-title p {
   max-width: 660px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -3526,7 +3453,7 @@ a {
   justify-content: space-between;
   margin-bottom: 17px;
   color: var(--paper);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 550;
 }
 
@@ -3547,14 +3474,14 @@ a {
 
 .financial-card dt {
   color: var(--quiet);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .financial-card dd {
   min-width: 0;
   overflow: hidden;
   color: #dce1e8;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 1.45;
   text-overflow: ellipsis;
@@ -3562,7 +3489,7 @@ a {
 
 .financial-card .mono-value {
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 
@@ -3606,7 +3533,7 @@ a {
   margin-bottom: 19px;
   color: var(--muted);
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -3646,7 +3573,7 @@ a {
 }
 
 .metric-dial strong {
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 430;
   letter-spacing: -0.04em;
 }
@@ -3655,7 +3582,7 @@ a {
   margin-top: 1px;
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -3671,14 +3598,14 @@ a {
 .financial-evidence-editor legend {
   padding: 0 4px;
   color: var(--paper);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 550;
 }
 
 .financial-evidence-editor > p {
   margin: 3px 0 13px;
   color: var(--financial-copy);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .financial-evidence-editor .evidence-mini-list {
@@ -3697,7 +3624,7 @@ a {
 }
 
 .evidence-metric .metric-dial strong {
-  font-size: 28px;
+  font-size: 30px;
 }
 
 .evidence-mini-list {
@@ -3714,7 +3641,7 @@ a {
   gap: 5px;
   overflow: hidden;
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3742,7 +3669,7 @@ a {
 
 .main-amount {
   margin-top: 30px;
-  font-size: clamp(28px, 2.8vw, 38px);
+  font-size: clamp(31px, 3vw, 42px);
   font-weight: 430;
   letter-spacing: -0.055em;
   text-align: center;
@@ -3756,7 +3683,7 @@ a {
   margin-top: 31px;
   color: var(--muted);
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .amount-range > div {
@@ -3812,14 +3739,14 @@ a {
 .financial-suggestion-card > span {
   color: var(--financial-label);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .financial-suggestion-card > strong {
   color: var(--paper);
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 550;
 }
 
@@ -3829,6 +3756,141 @@ a {
 
 .financial-suggestion-card.human_review {
   border-left-color: var(--danger);
+}
+
+.agreement-justification-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.agreement-justification-card,
+.agreement-justification-review {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid #3a4654;
+  border-radius: 10px;
+  background: #111820;
+}
+
+.agreement-justification-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.agreement-justification-card > div > span,
+.agreement-justification-review > div > div > span {
+  color: #b9c8d8;
+  font-family: var(--font-code);
+  font-size: 12px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.agreement-justification-card h3,
+.agreement-justification-review h3 {
+  margin: 4px 0 5px;
+  color: var(--paper);
+  font-size: 19px;
+  font-weight: 550;
+}
+
+.agreement-justification-card p,
+.agreement-justification-review > p,
+.agreement-justification-review li {
+  color: #d2dbe5;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.agreement-justification-card button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #806120;
+  border-radius: 6px;
+  color: #ffe1a4;
+  background: #3b2d14;
+  font-size: 14px;
+}
+
+.agreement-justification-card button:hover {
+  border-color: #c99735;
+  background: #4a3718;
+}
+
+.agreement-justification-review > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.agreement-justification-review > div > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--amber);
+}
+
+.agreement-justification-review ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 19px;
+}
+
+.agreement-justification-review small {
+  color: #b9c8d8;
+  font-size: 13px;
+}
+
+.agreement-justification-review.not_supported {
+  border-color: rgba(240, 128, 128, 0.5);
+}
+
+.agreement-justification-review.insufficient_evidence {
+  border-color: rgba(244, 174, 43, 0.5);
+}
+
+.review-missing-documents {
+  color: #ffe1a4 !important;
+}
+
+.chat-review-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid rgba(244, 174, 43, 0.38);
+  border-radius: 999px;
+  color: #ffe1a4;
+  background: rgba(67, 49, 18, 0.72);
+  font-family: var(--font-code);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.chat-review-status button {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #ead8ae;
+  background: transparent;
+}
+
+.chat-review-status button:hover:not(:disabled) {
+  color: var(--paper);
+  background: rgba(255, 225, 164, 0.14);
 }
 
 .financial-decision-card {
@@ -3875,20 +3937,20 @@ a {
 .decision-copy > span {
   color: var(--quiet);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .decision-copy h3 {
   margin: 3px 0 4px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
 }
 
 .decision-copy p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .decision-values {
@@ -3896,6 +3958,7 @@ a {
   align-items: stretch;
   justify-content: flex-start;
 }
+
 
 .decision-values > div {
   min-width: 100px;
@@ -3906,13 +3969,13 @@ a {
 .decision-values dt {
   margin-bottom: 5px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .decision-values dd {
   color: #ced5de;
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -3940,12 +4003,12 @@ a {
 
 .financial-dashboard-state strong {
   color: var(--paper);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .financial-dashboard-state p {
   max-width: 420px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -3960,7 +4023,7 @@ a {
   border-radius: 6px;
   color: var(--paper);
   background: var(--ledger);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 @media (max-width: 1100px) {
@@ -4074,7 +4137,7 @@ a {
   border-radius: 7px;
   color: #ffe0a1;
   background: #3b2d14;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   transition:
     border-color 150ms ease,
@@ -4094,13 +4157,13 @@ a {
 }
 
 .financial-overview-grid.editable {
+  grid-template-columns: minmax(460px, 1.1fr) minmax(420px, 1fr);
   align-items: stretch;
 }
 
-.financial-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 76px;
-  gap: 12px;
+.case-profile-card .financial-fields {
+  grid-template-columns: minmax(0, 1.15fr) minmax(150px, 0.85fr);
+  gap: 14px;
 }
 
 .process-fields {
@@ -4117,7 +4180,7 @@ a {
 .decision-amount-field > span {
   color: var(--financial-label);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -4132,7 +4195,7 @@ a {
   border-radius: 6px;
   color: #f5f7fa;
   background: #0b0f15;
-  font-size: 14px;
+  font-size: 16px;
   transition:
     border-color 150ms ease,
     background 150ms ease;
@@ -4158,7 +4221,7 @@ a {
 
 .financial-fields .mono-value {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .process-name-field {
@@ -4181,7 +4244,7 @@ a {
   border-radius: 6px;
   color: #d8e0e9;
   background: #171e27;
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -4210,7 +4273,7 @@ a {
   gap: 5px;
   overflow: hidden;
   color: #aeb8c5;
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -4237,6 +4300,60 @@ a {
 .financial-decision-card.submission {
   grid-template-columns: auto minmax(180px, 0.65fr) minmax(360px, 1.35fr) auto;
 }
+.financial-decision-card.submission.locked {
+  border-color: #303945;
+  background: #0e1319;
+}
+
+.financial-decision-card.submission.locked .decision-icon {
+  border-color: #394350;
+  color: #8d98a5;
+  background: #151b22;
+}
+
+.financial-decision-card.submission.locked .decision-copy h3 {
+  color: #c2cad3;
+}
+
+.financial-decision-card.submission.locked .decision-copy p,
+.financial-decision-card.submission.locked .decision-controls {
+  color: #7f8a96;
+}
+
+.financial-decision-card.submission.locked .decision-controls {
+  opacity: 0.64;
+}
+
+.financial-decision-card.submission.locked .decision-options label {
+  cursor: default;
+}
+
+.financial-decision-card.submission.locked .decision-options label.selected {
+  border-color: #46515e;
+  color: #c2cad3;
+  background: #171d24;
+}
+
+.financial-decision-card.submission.locked .decision-amount-field input:disabled,
+.financial-decision-card.submission.locked .decision-justification-field textarea:disabled {
+  border-color: #303945;
+  color: #929ca7;
+  background: #0a0e13;
+  cursor: not-allowed;
+  resize: none;
+}
+
+.submit-decision-button.edit-decision-button {
+  border-color: #46515e;
+  color: #d0d6dd;
+  background: #1a2129;
+}
+
+.submit-decision-button.edit-decision-button:hover {
+  border-color: #657383;
+  background: #222b35;
+}
+
 
 .decision-controls {
   display: grid;
@@ -4258,7 +4375,7 @@ a {
   border-radius: 6px;
   color: #b8c2ce;
   background: #0d1218;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -4268,10 +4385,6 @@ a {
   background: #3b2d14;
 }
 
-.decision-options label.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
 
 .decision-options input {
   position: absolute;
@@ -4295,7 +4408,7 @@ a {
 .decision-justification-field > span {
   color: var(--financial-label);
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.05em;
 }
 
@@ -4309,7 +4422,7 @@ a {
   outline: 0;
   color: var(--paper);
   background: #0d1218;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -4327,7 +4440,7 @@ a {
   border-top: 1px solid var(--rule-soft);
   color: #c8d1db;
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .submitted-decision-note svg {
@@ -4343,7 +4456,7 @@ a {
   padding: 10px 12px;
   border: 1px solid;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .financial-form-message.success {
@@ -4399,6 +4512,11 @@ a {
 
   .process-name-field button {
     justify-content: center;
+  }
+
+
+  .agreement-justification-card {
+    grid-template-columns: 1fr;
   }
 
 

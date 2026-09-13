@@ -35,7 +35,6 @@ class ProcessDataRecord(BaseModel):
     workbook_path: DocumentPath
     process_number: str
     state: str = Field(min_length=2, max_length=2)
-    subject: str
     sub_subject: Literal["fraud", "generic"]
     claim_amount: float = Field(gt=0)
     evidence: EvidenceInput
@@ -48,9 +47,9 @@ class JudgeReviewRequest(BaseModel):
     question: str = Field(
         default="Analise os pedidos, as provas e as defesas e proponha uma decisão fundamentada.",
         min_length=10,
-        max_length=2_000,
+        max_length=12_000,
     )
-    documents: list[DocumentReference] = Field(min_length=1, max_length=20)
+    documents: list[DocumentReference] = Field(min_length=1, max_length=100)
     process_data_reference: ProcessDataReference | None = None
     new_case_data: NewCaseData | None = None
 

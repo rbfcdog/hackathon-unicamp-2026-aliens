@@ -5,8 +5,25 @@
 
 # Dados sensíveis — não versionar
 data/*.csv
-data/subsidios/
-data/processos_exemplo/
+data/subsidios/*
+!data/subsidios/.gitkeep
+data/processos_exemplo/*
+!data/processos_exemplo/processo_01/
+!data/processos_exemplo/processo_02/
+data/processos_exemplo/processo_01/*
+data/processos_exemplo/processo_02/*
+!data/processos_exemplo/processo_01/autos/
+!data/processos_exemplo/processo_01/subsidios/
+!data/processos_exemplo/processo_02/autos/
+!data/processos_exemplo/processo_02/subsidios/
+data/processos_exemplo/processo_01/autos/*
+data/processos_exemplo/processo_01/subsidios/*
+data/processos_exemplo/processo_02/autos/*
+data/processos_exemplo/processo_02/subsidios/*
+!data/processos_exemplo/processo_01/autos/.gitkeep
+!data/processos_exemplo/processo_01/subsidios/.gitkeep
+!data/processos_exemplo/processo_02/autos/.gitkeep
+!data/processos_exemplo/processo_02/subsidios/.gitkeep
 data/**/*.pdf
 data/**/*.xlsx
 data/**/*.xlsm

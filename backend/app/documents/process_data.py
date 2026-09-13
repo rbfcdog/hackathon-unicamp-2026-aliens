@@ -82,7 +82,7 @@ class ProcessDataRepository:
             subsidies = workbook[SUBSIDIES_SHEET]
             outcome_header_row, outcome_headers = ProcessDataRepository._headers(
                 outcomes,
-                {PROCESS_COLUMN, "UF", "Assunto", "Sub-assunto", "Valor da causa"},
+                {PROCESS_COLUMN, "UF", "Sub-assunto", "Valor da causa"},
             )
             subsidy_header_row, subsidy_headers = ProcessDataRepository._headers(
                 subsidies,
@@ -112,7 +112,6 @@ class ProcessDataRepository:
             return {
                 "process_number": stored_process_number,
                 "state": state,
-                "subject": str(outcome_row[outcome_headers["Assunto"]]).strip(),
                 "sub_subject": ProcessDataRepository._sub_subject(
                     outcome_row[outcome_headers["Sub-assunto"]]
                 ),

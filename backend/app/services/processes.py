@@ -19,7 +19,12 @@ from app.documents import DocumentRepository, canonical_process_number
 from app.documents.process_data import ProcessDataRepository
 from app.domain.policy import SettlementPolicy
 from app.ml.tools import estimate_case_risk_payload
-from app.schemas.analysis import AnalysisRequest, EvidenceInput
+from app.schemas.analysis import (
+    AgreementJustificationReview,
+    AnalysisRequest,
+    DecisionJustifications,
+    EvidenceInput,
+)
 from app.schemas.processes import (
     InferredProcessTitle,
     LegalProcessCreate,
@@ -31,6 +36,7 @@ from app.schemas.processes import (
     ProcessFinancialOverviewResponse,
     ProcessFinancialRisk,
 )
+from app.services.process_documents import process_document_service
 
 DEFAULT_QUESTION = (
     "Analise a existência da contratação, do crédito e da dívida e apresente uma decisão "
@@ -197,9 +203,7 @@ class LegalProcessService:
                     content=(
                         f"Nome atual: {process.title}\n"
                         f"Número: {process.case_number}\n"
-                        f"Localização: {process.location}\n"
                         f"UF: {process.state}\n"
-                        f"Assunto: {process.subject}\n"
                         f"Tipo: {process.sub_subject}\n"
                         f"Valor da causa: {float(process.claim_amount):.2f}\n\n"
                         f"{context}"
@@ -243,9 +247,7 @@ class LegalProcessService:
         if process is None:
             process = LegalProcess(
                 **values,
-                title=payload.title or payload.subject or payload.case_number,
-                location=payload.location or payload.state,
-                subject=payload.subject or "Processo jurídico",
+                title=payload.title or payload.case_number,
                 default_question=payload.default_question or DEFAULT_QUESTION,
             )
             session.add(process)
@@ -254,10 +256,6 @@ class LegalProcessService:
                 setattr(process, field, value)
             if payload.title:
                 process.title = payload.title
-            if payload.location:
-                process.location = payload.location
-            if payload.subject:
-                process.subject = payload.subject
             if payload.default_question:
                 process.default_question = payload.default_question
 
@@ -290,7 +288,6 @@ class LegalProcessService:
         if workbook_record is not None:
             input_source = "workbook_row"
             state = workbook_record["state"]
-            subject = workbook_record["subject"]
             sub_subject = workbook_record["sub_subject"]
             claim_amount = workbook_record["claim_amount"]
             evidence = EvidenceInput.model_validate(workbook_record["evidence"])
@@ -298,11 +295,28 @@ class LegalProcessService:
         else:
             input_source = "process_registry"
             state = process.state
-            subject = process.subject
             sub_subject = "fraud" if process.sub_subject == "fraud" else "generic"
             claim_amount = float(process.claim_amount)
             evidence = EvidenceInput.model_validate(process.evidence)
             source_rows = {}
+
+        documents = await process_document_service.list(session, process.case_number)
+        detected_document_types = {
+            document.document_type for document in documents.documents
+        }
+        evidence = EvidenceInput(
+            **{
+                field: getattr(evidence, field) or field in detected_document_types
+                for field in (
+                    "contract",
+                    "bank_statement",
+                    "credit_proof",
+                    "dossier",
+                    "debt_evolution",
+                    "referenced_report",
+                )
+            }
+        )
 
         request = AnalysisRequest(
             case_number=process.case_number,
@@ -321,21 +335,14 @@ class LegalProcessService:
             "referenced_report",
         )
         enabled_evidence = sum(getattr(evidence, field) for field in evidence_fields)
-        normalized_title = process.title.strip().casefold()
-        normalized_location = process.location.strip().casefold()
-        normalized_subject = subject.strip().casefold()
-        has_complete_inputs = (
-            normalized_title not in {"", "novo processo"}
-            and normalized_location not in {"", "sem informações"}
-            and len(state.strip()) == 2
+        has_model_inputs = (
+            len(state.strip()) == 2
             and state.strip().upper() != "NA"
-            and normalized_subject not in {"", "sem informações"}
             and claim_amount > 0.01
-            and enabled_evidence == len(evidence_fields)
         )
         risk = None
         decision = None
-        if has_complete_inputs:
+        if has_model_inputs:
             estimate_payload = estimate_case_risk_payload(
                 uf=request.state or state,
                 sub_subject=normalized_sub_subject,
@@ -362,16 +369,51 @@ class LegalProcessService:
                 human_review_reason=policy.human_review_reason,
             )
         latest_decision = await self.latest_decision(session, process.id)
+        justification_result = await session.execute(
+            select(Analysis.result_payload)
+            .where(Analysis.case_number == process.case_number)
+            .where(Analysis.status == "completed")
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        )
+        justification_payload = justification_result.scalar_one_or_none()
+        justification_data = (
+            justification_payload.get("decision_justifications")
+            if justification_payload is not None
+            else None
+        )
+        decision_justifications = (
+            DecisionJustifications.model_validate(justification_data)
+            if justification_data is not None
+            else None
+        )
+        review_result = await session.execute(
+            select(Analysis.result_payload)
+            .where(Analysis.case_number == process.case_number)
+            .where(Analysis.status == "completed")
+            .where(Analysis.result_payload["agreement_justification_review"].is_not(None))
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        )
+        review_payload = review_result.scalar_one_or_none()
+        review_data = (
+            review_payload.get("agreement_justification_review")
+            if review_payload is not None
+            else None
+        )
+        agreement_justification_review = (
+            AgreementJustificationReview.model_validate(review_data)
+            if review_data is not None
+            else None
+        )
         return ProcessFinancialOverviewResponse(
             case_number=process.case_number,
             title=process.title,
-            location=process.location,
             updated_at=process.updated_at,
             input_source=input_source,
             workbook_path=workbook_path,
             source_rows=source_rows,
             state=state,
-            subject=subject,
             sub_subject=normalized_sub_subject,
             claim_amount=claim_amount,
             evidence=evidence,
@@ -379,6 +421,8 @@ class LegalProcessService:
             risk=risk,
             decision=decision,
             latest_decision=latest_decision,
+            agreement_justification_review=agreement_justification_review,
+            decision_justifications=decision_justifications,
         )
 
     async def submit_decision(
@@ -391,17 +435,13 @@ class LegalProcessService:
         if process is None:
             raise LookupError("process not found")
         overview = await self.financial_overview(session, case_number)
-        if overview.decision is None:
-            raise ValueError(
-                "Complete process inputs and all six documents are required "
-                "before submitting a decision"
-            )
         if (
-            payload.recommendation != overview.decision.recommendation
+            overview.decision is not None
+            and payload.recommendation != overview.decision.recommendation
             and not payload.justification
         ):
             raise ValueError(
-                "Justifique a decisão quando ela divergir da recomendação do modelo"
+                "Justifique a decisão quando ela divergir da recomendação registrada"
             )
         decision = ProcessDecision(
             process_id=process.id,
@@ -421,9 +461,7 @@ class LegalProcessService:
             case_number=draft_number,
             canonical_number=canonical_process_number(draft_number),
             title="Novo processo",
-            location="Sem informações",
             state="NA",
-            subject="Sem informações",
             sub_subject="generic",
             claim_amount=0.01,
             evidence=EvidenceInput().model_dump(mode="json"),

@@ -16,7 +16,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EnterOS · Inteligência para decisões jurídicas",
+  title: "EnterOS · Decisões jurídicas",
   description:
     "Workspace auditável para análise documental, risco judicial e política de acordos.",
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, ChartColumnBig, MessageSquare } from "lucide-react";
+import { useState } from "react";
 import { ProcessFinancialDashboard } from "./process-financial-dashboard";
 import { ProcessChat } from "./process-chat";
 import type { LegalProcess } from "@/lib/types";
@@ -9,6 +10,11 @@ type WorkspaceView = "chat" | "financial";
 
 type Props = {
   legalProcess: LegalProcess;
+  initialDocumentUploadCompleted: number;
+  initialDocumentUploadCurrentName: string | null;
+  initialDocumentUploadError: string | null;
+  initialDocumentUploadTotal: number;
+  initialDocumentsUploading: boolean;
   onBack: () => void;
   onProcessUpdated: (legalProcess: LegalProcess) => void;
   onViewChange: (view: WorkspaceView) => void;
@@ -18,10 +24,29 @@ type Props = {
 export function CaseWorkspace({
   legalProcess,
   onBack,
+  initialDocumentUploadCompleted,
+  initialDocumentUploadCurrentName,
+  initialDocumentUploadError,
+  initialDocumentUploadTotal,
+  initialDocumentsUploading,
   onProcessUpdated,
   onViewChange,
   view,
 }: Props) {
+  const [agreementJustificationReviewForCase, setAgreementJustificationReviewForCase] =
+    useState<string | null>(null);
+  const agreementJustificationReviewEnabled =
+    agreementJustificationReviewForCase === legalProcess.case_number;
+
+  function setAgreementJustificationReviewEnabled(enabled: boolean) {
+    setAgreementJustificationReviewForCase(enabled ? legalProcess.case_number : null);
+  }
+
+  function requestAgreementJustificationReview() {
+    setAgreementJustificationReviewEnabled(true);
+    onViewChange("chat");
+  }
+
   return (
     <div className="case-workspace case-chat-workspace">
       <header className="workspace-case-bar">
@@ -56,11 +81,18 @@ export function CaseWorkspace({
         <ProcessFinancialDashboard
           legalProcess={legalProcess}
           onProcessUpdated={onProcessUpdated}
+          onRequestAgreementJustification={requestAgreementJustificationReview}
         />
       ) : (
         <ProcessChat
-          caseNumber={legalProcess.case_number}
-          isDraft={legalProcess.is_draft}
+          agreementJustificationReviewEnabled={agreementJustificationReviewEnabled}
+          legalProcess={legalProcess}
+          initialDocumentUploadCompleted={initialDocumentUploadCompleted}
+          initialDocumentUploadCurrentName={initialDocumentUploadCurrentName}
+          initialDocumentUploadError={initialDocumentUploadError}
+          initialDocumentUploadTotal={initialDocumentUploadTotal}
+          initialDocumentsUploading={initialDocumentsUploading}
+          onAgreementJustificationReviewChange={setAgreementJustificationReviewEnabled}
           onProcessUpdated={onProcessUpdated}
         />
       )}

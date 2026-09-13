@@ -15,6 +15,23 @@ class EvidenceInput(BaseModel):
     debt_evolution: bool = False
     referenced_report: bool = False
 
+class AgreementJustificationReview(BaseModel):
+    verdict: Literal[
+        "supported",
+        "partially_supported",
+        "insufficient_evidence",
+        "not_supported",
+    ]
+    summary: str = Field(min_length=20, max_length=1_200)
+    supporting_evidence: list[str] = Field(default_factory=list, max_length=8)
+    missing_documents: list[str] = Field(default_factory=list, max_length=6)
+
+class DecisionJustifications(BaseModel):
+    agreement: str = Field(min_length=20, max_length=1_200)
+    defense: str = Field(min_length=20, max_length=1_200)
+    human_review: str = Field(min_length=20, max_length=1_200)
+
+
 
 class AnalysisRequest(BaseModel):
     case_number: str = Field(min_length=1, max_length=64)
@@ -23,6 +40,16 @@ class AnalysisRequest(BaseModel):
     claim_amount: float | None = Field(default=None, gt=0, le=1_000_000_000)
     evidence: EvidenceInput | None = None
     documents: list[DocumentReference] = Field(default_factory=list, max_length=20)
+    analysis_review_mode: Literal["standard", "agreement_justification"] = "standard"
+    lawyer_justification: str | None = Field(default=None, max_length=5_000)
+
+    @field_validator("lawyer_justification")
+    @classmethod
+    def normalize_lawyer_justification(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("state")
     @classmethod
@@ -31,6 +58,13 @@ class AnalysisRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_input_source(self) -> "AnalysisRequest":
+        if (
+            self.analysis_review_mode == "agreement_justification"
+            and self.lawyer_justification is None
+        ):
+            raise ValueError(
+                "lawyer_justification is required for agreement_justification review"
+            )
         paths = [document.path for document in self.documents]
         if len(paths) != len(set(paths)):
             raise ValueError("documents must not contain duplicate paths")
@@ -41,7 +75,8 @@ class AnalysisRequest(BaseModel):
         ]
         if missing:
             raise ValueError(
-                "Without documents, provide these ML input fields: " + ", ".join(missing)
+                "Sem documentos, informe os dados necessários para a análise: "
+                + ", ".join(missing)
             )
         if self.sub_subject is None:
             self.sub_subject = "generic"
@@ -90,11 +125,13 @@ class AnalysisResult(BaseModel):
     factors_for_agreement: list[str]
     factors_for_defense: list[str]
     explanation: str
+    decision_justifications: DecisionJustifications | None = None
     policy_version: str
     model_inputs: ResolvedAnalysisInput | None = None
     consulted_documents: list[DocumentPath] = Field(default_factory=list)
     unreadable_documents: list[DocumentPath] = Field(default_factory=list)
 
+    agreement_justification_review: AgreementJustificationReview | None = None
     @model_validator(mode="after")
     def validate_condemnation_quantiles(self) -> "AnalysisResult":
         quantiles = (self.condemnation_q10, self.condemnation_q50, self.condemnation_q90)
