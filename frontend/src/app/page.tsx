@@ -1,12 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, FilePlus2, Menu, Search, X } from "lucide-react";
+import { ChartColumnBig, FilePlus2, Landmark, Menu, Search, X } from "lucide-react";
 import { CaseWorkspace } from "@/components/case-workspace";
+import {
+  NewAnalysisDialog,
+  type NewProcessRequest,
+} from "@/components/new-analysis-dialog";
 import { apiFetch } from "@/lib/api";
-import type { LegalProcess } from "@/lib/types";
+import type { AnalysisResponse, LegalProcess } from "@/lib/types";
 
 type BusyState = "processes" | "draft" | null;
+type WorkspaceView = "chat" | "financial";
 
 function mergeProcessSnapshots(
   current: LegalProcess[],
@@ -29,6 +35,8 @@ export default function Home() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [connectionRevision, setConnectionRevision] = useState(0);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
+  const [newProcessOpen, setNewProcessOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -107,18 +115,43 @@ export default function Home() {
     };
   }, [connectionRevision]);
 
-  const createDraftProcess = useCallback(async () => {
+  const createProcess = useCallback(async (payload: NewProcessRequest) => {
     setBusy("draft");
     setError(null);
     try {
-      const draft = await apiFetch<LegalProcess>("/v1/processes/drafts", {
+      const { documents, title, location, subject, ...analysisInput } = payload;
+      const created = await apiFetch<LegalProcess>("/v1/processes", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...analysisInput,
+          ...(title ? { title } : {}),
+          ...(location ? { location } : {}),
+          ...(subject ? { subject } : {}),
+        }),
       });
-      setDraftProcess(draft);
-      setProcesses((current) => mergeProcessSnapshots(current, [draft]));
-      setSelectedProcess(draft);
-    } catch {
-      setError("Não foi possível abrir uma nova conversa.");
+
+      if (documents.length === 0) {
+        await apiFetch<AnalysisResponse>("/v1/analyses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(analysisInput),
+        });
+      } else {
+        for (const document of documents) {
+          const form = new FormData();
+          form.append("file", document.file);
+          form.append("document_type", document.documentType);
+          await apiFetch(
+            `/v1/processes/${encodeURIComponent(created.case_number)}/documents`,
+            { method: "POST", body: form },
+          );
+        }
+      }
+
+      setProcesses((current) => mergeProcessSnapshots(current, [created]));
+      setSelectedProcess(created);
+      setWorkspaceView("chat");
     } finally {
       setBusy(null);
     }
@@ -137,12 +170,34 @@ export default function Home() {
 
   function chooseProcess(legalProcess: LegalProcess) {
     setSelectedProcess(legalProcess);
+    setWorkspaceView("chat");
     setError(null);
     setMobileNavOpen(false);
   }
 
+  function openFinancialOverview(legalProcess: LegalProcess) {
+    setSelectedProcess(legalProcess);
+    setWorkspaceView("financial");
+    setError(null);
+    setMobileNavOpen(false);
+  }
+
+  function updateProcessSnapshot(updated: LegalProcess) {
+    setProcesses((current) =>
+      current.map((legalProcess) =>
+        legalProcess.id === updated.id ? updated : legalProcess,
+      ),
+    );
+    setSelectedProcess(updated);
+    setDraftProcess((current) => {
+      if (current?.id !== updated.id) return current;
+      return updated.is_draft ? updated : null;
+    });
+  }
+
   function returnHome() {
     setSelectedProcess(null);
+    setWorkspaceView("chat");
     setError(null);
   }
 
@@ -166,7 +221,7 @@ export default function Home() {
         <button
           className="new-process-button"
           onClick={() => {
-            void createDraftProcess();
+            setNewProcessOpen(true);
             setMobileNavOpen(false);
           }}
           type="button"
@@ -189,30 +244,55 @@ export default function Home() {
           <div className="sidebar-section-heading">Processos</div>
           <div className="case-list">
             {filteredProcesses.map((legalProcess) => (
-              <button
+              <div
                 className={
                   activeProcess?.id === legalProcess.id
-                    ? "case-list-item selected"
-                    : "case-list-item"
+                    ? "case-list-entry selected"
+                    : "case-list-entry"
                 }
                 key={legalProcess.id}
-                onClick={() => chooseProcess(legalProcess)}
-                type="button"
               >
-                <span>
-                  <strong>{legalProcess.title}</strong>
-                  <small>
-                    {legalProcess.is_draft ? "Sem informações" : legalProcess.case_number}
-                  </small>
-                </span>
-                <ArrowRight size={15} />
-              </button>
+                <button
+                  className={
+                    activeProcess?.id === legalProcess.id && workspaceView === "chat"
+                      ? "case-list-item selected"
+                      : "case-list-item"
+                  }
+                  onClick={() => chooseProcess(legalProcess)}
+                  type="button"
+                >
+                  <span>
+                    <strong>{legalProcess.title}</strong>
+                    <small>
+                      {legalProcess.is_draft ? "Sem informações" : legalProcess.case_number}
+                    </small>
+                  </span>
+                </button>
+                <button
+                  aria-label={`Abrir painel financeiro de ${legalProcess.title}`}
+                  className={
+                    activeProcess?.id === legalProcess.id &&
+                    workspaceView === "financial"
+                      ? "case-financial-button selected"
+                      : "case-financial-button"
+                  }
+                  onClick={() => openFinancialOverview(legalProcess)}
+                  title="Painel financeiro"
+                  type="button"
+                >
+                  <ChartColumnBig size={15} />
+                </button>
+              </div>
             ))}
             {!filteredProcesses.length && busy !== "processes" && (
               <p className="empty-case-list">Nenhum processo disponível.</p>
             )}
           </div>
         </div>
+        <Link className="sidebar-admin-link" href="/banco">
+          <Landmark size={15} />
+          Administração bancária
+        </Link>
       </aside>
 
       {mobileNavOpen && (
@@ -224,6 +304,13 @@ export default function Home() {
         />
       )}
 
+
+      <NewAnalysisDialog
+        loading={busy === "draft"}
+        onClose={() => setNewProcessOpen(false)}
+        onSubmit={createProcess}
+        open={newProcessOpen}
+      />
       <main className="main-canvas">
         <button
           aria-label="Abrir navegação"
@@ -240,6 +327,9 @@ export default function Home() {
               key={activeProcess.id}
               legalProcess={activeProcess}
               onBack={returnHome}
+              onProcessUpdated={updateProcessSnapshot}
+              onViewChange={setWorkspaceView}
+              view={workspaceView}
             />
           ) : (
             <section className="draft-chat-loading" aria-live="polite">
@@ -256,13 +346,9 @@ export default function Home() {
                   </p>
                   <button
                     className="primary-button"
-                    onClick={() => {
-                      if (connectionError) {
-                        setConnectionRevision((current) => current + 1);
-                        return;
-                      }
-                      void createDraftProcess();
-                    }}
+                    onClick={() =>
+                      setConnectionRevision((current) => current + 1)
+                    }
                     type="button"
                   >
                     Tentar novamente

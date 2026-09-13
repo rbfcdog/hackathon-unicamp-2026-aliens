@@ -8,7 +8,7 @@ from app.schemas.analysis import AgreementRange, AnalysisRequest
 class PolicyDecision:
     recommendation: Literal["agreement", "defense", "human_review"]
     risk_band: Literal["low", "medium", "high"]
-    expected_defense_cost: float
+    expected_defense_cost: float | None
     evaluated_agreement_cost: float | None
     agreement_cheaper: bool | None
     agreement_range: AgreementRange | None
@@ -17,7 +17,7 @@ class PolicyDecision:
 
 
 class SettlementPolicy:
-    version = "decision-tree-2026-09-12"
+    version = "decision-tree-2026-09-13"
     litigation_cost = 1_500.0
     low_risk_threshold = 0.40
     high_risk_threshold = 0.60
@@ -27,8 +27,22 @@ class SettlementPolicy:
         request: AnalysisRequest,
         *,
         loss_probability: float,
-        expected_condemnation: float,
+        expected_condemnation: float | None,
     ) -> PolicyDecision:
+        if request.claim_amount is None or expected_condemnation is None:
+            return PolicyDecision(
+                recommendation="human_review",
+                risk_band=self._risk_band(loss_probability),
+                expected_defense_cost=None,
+                evaluated_agreement_cost=None,
+                agreement_cheaper=None,
+                agreement_range=None,
+                next_action="human_review",
+                human_review_reason=(
+                    "Valor da causa não informado; classificação de risco disponível, "
+                    "mas precificação e decisão automática foram bloqueadas."
+                ),
+            )
         expected_defense_cost = round(
             loss_probability * expected_condemnation + self.litigation_cost,
             2,
@@ -78,3 +92,10 @@ class SettlementPolicy:
             next_action="propose_agreement" if agreement_cheaper else "prepare_defense",
             human_review_reason=None,
         )
+
+    def _risk_band(self, loss_probability: float) -> Literal["low", "medium", "high"]:
+        if loss_probability < self.low_risk_threshold:
+            return "low"
+        if loss_probability <= self.high_risk_threshold:
+            return "medium"
+        return "high"

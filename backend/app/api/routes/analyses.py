@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -30,6 +30,14 @@ async def create_analysis(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/latest", response_model=AnalysisResponse | None)
+async def get_latest_analysis(
+    case_number: Annotated[str, Query(min_length=1, max_length=64)],
+    session: SessionDependency,
+) -> AnalysisResponse | None:
+    return await analysis_service.latest_for_case(session, case_number)
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)

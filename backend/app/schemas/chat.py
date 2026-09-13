@@ -36,6 +36,13 @@ class ChatSessionResponse(BaseModel):
     updated_at: datetime
 
 
+class ChatToolCallResponse(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    tool: str = Field(min_length=1, max_length=128)
+    document_path: str = Field(default="", max_length=512)
+    status: Literal["complete", "error"]
+
+
 class ChatMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,6 +51,7 @@ class ChatMessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     document_paths: list[DocumentPath]
+    tool_calls: list[ChatToolCallResponse] = Field(default_factory=list)
     trace_id: uuid.UUID | None
     created_at: datetime
 

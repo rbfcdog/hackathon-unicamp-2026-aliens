@@ -1,13 +1,15 @@
 import {
   AlertTriangle,
   ArrowUpRight,
+  Calculator,
   CheckCircle2,
   CircleDollarSign,
   FileCheck2,
   Scale,
   ShieldAlert,
+  Waypoints,
 } from "lucide-react";
-import type { AnalysisResponse, ReviewResponse } from "@/lib/types";
+import type { AnalysisResponse } from "@/lib/types";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -15,8 +17,20 @@ const currency = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 });
 
+const preciseCurrency = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 const percentage = new Intl.NumberFormat("pt-BR", {
   style: "percent",
+  maximumFractionDigits: 1,
+});
+
+const decimal = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 });
 
@@ -26,20 +40,19 @@ const RECOMMENDATION_LABEL = {
   human_review: "Revisão humana",
 };
 
-const DISPOSITION_LABEL = {
-  grant_claim: "Procedência",
-  deny_claim: "Improcedência",
-  partial_grant: "Procedência parcial",
-  insufficient_evidence: "Prova insuficiente",
+const COMPONENT_LABEL: Record<string, string> = {
+  logistic_regression: "Regressão logística",
+  xgboost: "XGBoost",
 };
 
-type Props =
-  | { analysis: AnalysisResponse; review?: never }
-  | { analysis?: never; review: ReviewResponse };
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
-export function AnalysisResultPanel({ analysis, review }: Props) {
-  if (analysis) return <AnalysisResult analysis={analysis} />;
-  return <ReviewResult review={review} />;
+type Props = { analysis: AnalysisResponse };
+
+export function AnalysisResultPanel({ analysis }: Props) {
+  return <AnalysisResult analysis={analysis} />;
 }
 
 function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
@@ -53,13 +66,64 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
     );
   }
 
+  const claimAmount = result.model_inputs?.claim_amount;
+  const pricingUnavailable =
+    result.expected_condemnation === null ||
+    result.expected_defense_cost === null ||
+    (claimAmount !== null && claimAmount !== undefined && claimAmount <= 0.01);
+  const recommendationLabel = pricingUnavailable
+    ? "Revisão necessária"
+    : RECOMMENDATION_LABEL[result.recommendation];
+  const explanation = pricingUnavailable
+    ? "O risco de perda pode ser classificado com a UF, o tipo do processo e as evidências. Informe o valor da causa para calcular a condenação esperada, o custo da defesa e a faixa de acordo."
+    : result.explanation;
+  const economics =
+    !pricingUnavailable &&
+    result.expected_condemnation !== null &&
+    result.expected_defense_cost !== null
+      ? (() => {
+          const expectedCondemnation = result.expected_condemnation;
+          const expectedDefenseCost = result.expected_defense_cost;
+          const riskAdjustedLoss = roundCurrency(
+            result.loss_probability * expectedCondemnation,
+          );
+          const fixedDefenseCost = roundCurrency(
+            Math.max(0, expectedDefenseCost - riskAdjustedLoss),
+          );
+          const components = Object.entries(result.component_probabilities)
+            .map(([name, probability]) => ({
+              name,
+              probability,
+              expectedDefenseCost: roundCurrency(
+                fixedDefenseCost + probability * expectedCondemnation,
+              ),
+            }))
+            .sort((left, right) => left.expectedDefenseCost - right.expectedDefenseCost);
+          const evidence = result.model_inputs?.evidence;
+          const availableEvidence = evidence
+            ? Object.values(evidence).filter(Boolean).length
+            : null;
+
+          return {
+            expectedCondemnation,
+            expectedDefenseCost,
+            riskAdjustedLoss,
+            fixedDefenseCost,
+            components,
+            availableEvidence,
+            minimumCost: components.at(0)?.expectedDefenseCost,
+            maximumCost: components.at(-1)?.expectedDefenseCost,
+          };
+        })()
+      : null;
+
   return (
     <section className="result-panel" aria-label="Resultado da análise">
       <div className="result-hero">
         <div>
           <span className="section-kicker">Recomendação da política</span>
-          <h2>{RECOMMENDATION_LABEL[result.recommendation]}</h2>
-          <p>{result.explanation}</p>
+          <h2>{recommendationLabel}</h2>
+          <p>{explanation}</p>
         </div>
         <RiskDial value={result.loss_probability} />
       </div>
@@ -67,13 +131,13 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
       <div className="metric-grid">
         <Metric
           icon={<Scale size={17} />}
-          label="Custo esperado da defesa"
-          value={currency.format(result.expected_defense_cost)}
+          label="Custo total esperado"
+          value={result.expected_defense_cost === null ? "Indisponível" : currency.format(result.expected_defense_cost)}
         />
         <Metric
           icon={<CircleDollarSign size={17} />}
-          label="Condenação esperada"
-          value={currency.format(result.expected_condemnation)}
+          label="Condenação se houver perda"
+          value={result.expected_condemnation === null ? "Indisponível" : currency.format(result.expected_condemnation)}
         />
         <Metric
           icon={<FileCheck2 size={17} />}
@@ -82,7 +146,17 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
         />
       </div>
 
-      {result.agreement_range && (
+      {pricingUnavailable && (
+        <div className="pricing-unavailable" role="status">
+          <AlertTriangle size={18} />
+          <div>
+            <strong>Valor da causa não informado</strong>
+            <span>Preencha esse campo no perfil do processo para liberar abertura, alvo e teto.</span>
+          </div>
+        </div>
+      )}
+
+      {!pricingUnavailable && result.agreement_range && (
         <div className="agreement-band">
           <div>
             <span>Abertura</span>
@@ -99,6 +173,116 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
             <strong>{currency.format(result.agreement_range.ceiling)}</strong>
           </div>
         </div>
+      )}
+
+      {economics && (
+        <section className="economic-proof" aria-labelledby="economic-proof-title">
+          <header className="economic-proof-heading">
+            <div>
+              <span className="section-kicker">Evidência econômica</span>
+              <h3 id="economic-proof-title">Memória de cálculo da decisão</h3>
+            </div>
+            <div className="economic-proof-confidence">
+              <Waypoints size={16} />
+              <span>
+                {economics.availableEvidence === null
+                  ? "Base documental avaliada"
+                  : `${economics.availableEvidence}/6 documentos`}
+                {" · "}
+                {decimal.format(result.model_disagreement * 100)} p.p. de divergência
+              </span>
+            </div>
+          </header>
+
+          <div className="economic-proof-grid">
+            <div className="calculation-ledger">
+              <div className="calculation-ledger-title">
+                <Calculator size={16} />
+                <strong>Custo esperado da defesa</strong>
+              </div>
+              <dl>
+                <div>
+                  <dt>Probabilidade de perda</dt>
+                  <dd>{percentage.format(result.loss_probability)}</dd>
+                </div>
+                <div>
+                  <dt>Condenação em cenário desfavorável</dt>
+                  <dd>{preciseCurrency.format(economics.expectedCondemnation)}</dd>
+                </div>
+                <div className="calculation-operation">
+                  <dt>Risco financeiro</dt>
+                  <dd>
+                    {percentage.format(result.loss_probability)}
+                    {" × "}
+                    {preciseCurrency.format(economics.expectedCondemnation)}
+                    {" = "}
+                    {preciseCurrency.format(economics.riskAdjustedLoss)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Custo processual considerado</dt>
+                  <dd>+ {preciseCurrency.format(economics.fixedDefenseCost)}</dd>
+                </div>
+                <div className="calculation-total">
+                  <dt>Total esperado</dt>
+                  <dd>{preciseCurrency.format(economics.expectedDefenseCost)}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="decision-threshold">
+              <span className="section-kicker">Ponto de indiferença</span>
+              <strong>{preciseCurrency.format(economics.expectedDefenseCost)}</strong>
+              {result.recommendation === "defense" ? (
+                <p>
+                  A política recomenda defesa. Um acordo acima deste valor custa mais que
+                  defender em valor esperado. O número é um teto econômico de contingência,
+                  não uma oferta recomendada.
+                </p>
+              ) : result.agreement_range ? (
+                <p>
+                  O alvo de {preciseCurrency.format(result.agreement_range.target)} fica{" "}
+                  {preciseCurrency.format(
+                    economics.expectedDefenseCost - result.agreement_range.target,
+                  )}{" "}
+                  abaixo do custo esperado da defesa.
+                </p>
+              ) : (
+                <p>
+                  Este é o valor no qual acordo e defesa possuem o mesmo custo esperado.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {economics.components.length > 0 && (
+            <div className="model-sensitivity">
+              <div className="model-sensitivity-heading">
+                <div>
+                  <span className="section-kicker">Teste de sensibilidade</span>
+                  <strong>Quanto cada modelo mudaria o custo</strong>
+                </div>
+                {economics.minimumCost !== undefined &&
+                  economics.maximumCost !== undefined && (
+                    <span>
+                      Faixa: {preciseCurrency.format(economics.minimumCost)}
+                      {" — "}
+                      {preciseCurrency.format(economics.maximumCost)}
+                    </span>
+                  )}
+              </div>
+              <div className="model-sensitivity-rows">
+                {economics.components.map((component) => (
+                  <div key={component.name}>
+                    <span>{COMPONENT_LABEL[component.name] ?? component.name}</span>
+                    <strong>{percentage.format(component.probability)}</strong>
+                    <span>{preciseCurrency.format(component.expectedDefenseCost)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       <div className="factor-columns">
@@ -123,88 +307,14 @@ function AnalysisResult({ analysis }: { analysis: AnalysisResponse }) {
   );
 }
 
-function ReviewResult({ review }: { review: ReviewResponse }) {
-  return (
-    <section className="result-panel" aria-label="Resultado da revisão documental">
-      <div className="result-hero review-hero">
-        <div>
-          <span className="section-kicker">Parecer documental</span>
-          <h2>{DISPOSITION_LABEL[review.disposition]}</h2>
-          <p>{review.summary}</p>
-        </div>
-        <RiskDial
-          label="Confiança"
-          value={review.confidence}
-          risk={review.ml_analysis?.loss_probability}
-        />
-      </div>
 
-      {review.strategy && (
-        <div className="strategy-strip">
-          <div>
-            <span>Estratégia</span>
-            <strong>{RECOMMENDATION_LABEL[review.strategy.recommendation]}</strong>
-          </div>
-          <div>
-            <span>Custo esperado</span>
-            <strong>{currency.format(review.strategy.expected_defense_cost)}</strong>
-          </div>
-          <div>
-            <span>Risco</span>
-            <strong>{review.strategy.risk_band}</strong>
-          </div>
-          {review.strategy.agreement_range && (
-            <div>
-              <span>Valor-alvo do acordo</span>
-              <strong>{currency.format(review.strategy.agreement_range.target)}</strong>
-            </div>
-          )}
-        </div>
-      )}
 
-      <div className="findings-list">
-        {review.findings.map((finding, index) => (
-          <article className="finding-card" key={`${finding.issue}-${index}`}>
-            <span className="finding-index">{String(index + 1).padStart(2, "0")}</span>
-            <div>
-              <h3>{finding.issue}</h3>
-              <strong>{finding.conclusion}</strong>
-              <p>{finding.reasoning}</p>
-              {finding.citations.map((citation) => (
-                <blockquote key={`${citation.document_path}-${citation.locator}`}>
-                  “{citation.excerpt}”
-                  <cite>{citation.locator}</cite>
-                </blockquote>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <footer className="audit-footer">
-        <span>{review.consulted_documents.length} documentos consultados</span>
-        <span>Modelo {review.model}</span>
-        <span>Trace {review.trace_id.slice(0, 8)}</span>
-      </footer>
-    </section>
-  );
-}
-
-function RiskDial({
-  value,
-  label = "Risco de perda",
-  risk,
-}: {
-  value: number;
-  label?: string;
-  risk?: number;
-}) {
+function RiskDial({ value }: { value: number }) {
   return (
     <div className="risk-dial" style={{ "--risk": `${value * 100}%` } as React.CSSProperties}>
       <div>
         <strong>{percentage.format(value)}</strong>
-        <span>{label}</span>
-        {risk !== undefined && <small>Risco {percentage.format(risk)}</small>}
+        <span>Risco de perda</span>
       </div>
     </div>
   );

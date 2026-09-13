@@ -12,7 +12,7 @@ from app.config import Settings
 from app.documents import DOCUMENT_TOOLS, DocumentRepository, ProcessDataRepository
 from app.domain import SettlementPolicy
 from app.graph.judge import JUDGE_TOOLS, JudgeState
-from app.graph.nodes import estimate_risk
+from app.graph.nodes import apply_policy, estimate_risk
 from app.main import app
 from app.ml.tools import (
     estimate_case_risk,
@@ -197,6 +197,39 @@ def test_decision_tree_thresholds_and_economic_comparison() -> None:
     assert high_agreement.recommendation == "agreement"
     assert high_agreement.agreement_cheaper is True
     assert high_agreement.next_action == "propose_agreement"
+
+
+def test_missing_claim_amount_preserves_risk_and_blocks_pricing() -> None:
+    model_inputs = ResolvedAnalysisInput(
+        state="AM",
+        sub_subject="generic",
+        claim_amount=None,
+        evidence=EvidenceInput(credit_proof=True),
+        input_source="documents",
+    ).model_dump(mode="json")
+
+    risk = estimate_risk({"model_inputs": model_inputs})
+    decision = apply_policy(
+        {
+            "request": AnalysisRequest(
+                case_number="RASCUNHO-SEM-VALOR",
+                documents=[{"path": PDF_PATH, "document_type": "credit_proof"}],
+            ).model_dump(mode="json"),
+            "model_inputs": model_inputs,
+            **risk,
+        }
+    )
+
+    assert risk["loss_probability"] > 0
+    assert risk["expected_condemnation"] is None
+    assert risk["condemnation_q10"] is None
+    assert risk["condemnation_q50"] is None
+    assert risk["condemnation_q90"] is None
+    assert decision["recommendation"] == "human_review"
+    assert decision["expected_defense_cost"] is None
+    assert decision["agreement_range"] is None
+    assert decision["next_action"] == "human_review"
+    assert "Valor da causa não informado" in str(decision["human_review_reason"])
 
 
 def test_document_tool_rejects_file_not_supplied_to_review() -> None:

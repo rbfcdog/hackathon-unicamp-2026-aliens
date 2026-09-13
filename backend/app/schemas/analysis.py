@@ -57,7 +57,7 @@ class AgreementRange(BaseModel):
 class ResolvedAnalysisInput(BaseModel):
     state: str = Field(min_length=2, max_length=2)
     sub_subject: Literal["fraud", "generic"]
-    claim_amount: float = Field(gt=0, le=1_000_000_000)
+    claim_amount: float | None = Field(default=None, gt=0, le=1_000_000_000)
     evidence: EvidenceInput
     input_source: Literal[
         "request_fields",
@@ -72,16 +72,16 @@ class AnalysisResult(BaseModel):
     risk_band: Literal["low", "medium", "high"]
     evidence_score: float = Field(ge=0, le=1)
     loss_probability: float = Field(ge=0, le=1)
-    expected_condemnation: float = Field(ge=0)
-    condemnation_q10: float = Field(ge=0)
-    condemnation_q50: float = Field(ge=0)
-    condemnation_q90: float = Field(ge=0)
+    expected_condemnation: float | None = Field(default=None, ge=0)
+    condemnation_q10: float | None = Field(default=None, ge=0)
+    condemnation_q50: float | None = Field(default=None, ge=0)
+    condemnation_q90: float | None = Field(default=None, ge=0)
     model_disagreement: float = Field(ge=0, le=1)
     component_probabilities: dict[str, float]
     ensemble_weights: dict[str, float]
     requires_model_review: bool
     model_version: str = Field(min_length=1)
-    expected_defense_cost: float = Field(ge=0)
+    expected_defense_cost: float | None = Field(default=None, ge=0)
     evaluated_agreement_cost: float | None
     agreement_cheaper: bool | None
     agreement_range: AgreementRange | None
@@ -97,7 +97,13 @@ class AnalysisResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_condemnation_quantiles(self) -> "AnalysisResult":
-        if not self.condemnation_q10 <= self.condemnation_q50 <= self.condemnation_q90:
+        quantiles = (self.condemnation_q10, self.condemnation_q50, self.condemnation_q90)
+        if any(value is None for value in quantiles):
+            if any(value is not None for value in quantiles):
+                raise ValueError("Condemnation quantiles must be all present or all absent")
+            return self
+        q10, q50, q90 = quantiles
+        if not q10 <= q50 <= q90:
             raise ValueError("Condemnation quantiles must be ordered")
         return self
 

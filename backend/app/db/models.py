@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,6 +47,7 @@ class LegalProcess(Base):
     claim_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     evidence: Mapped[dict[str, bool]] = mapped_column(JSONB)
     default_question: Mapped[str] = mapped_column(Text)
+    model_inputs_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -60,6 +61,34 @@ class LegalProcess(Base):
     @property
     def is_draft(self) -> bool:
         return self.case_number.startswith("RASCUNHO-")
+
+
+class ProcessDecision(Base):
+    __tablename__ = "process_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    process_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("legal_processes.id", ondelete="CASCADE"),
+        index=True,
+    )
+    recommendation: Mapped[str] = mapped_column(String(24), index=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    model_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_status: Mapped[str] = mapped_column(
+        String(24), default="pending", server_default="pending", index=True
+    )
+    bank_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    projected_outcome: Mapped[str | None] = mapped_column(
+        String(24), nullable=True, index=True
+    )
+    projected_outcome_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
 
 
 class ProcessDocument(Base):
@@ -109,6 +138,7 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)
     document_paths: Mapped[list[str]] = mapped_column(JSONB)
+    tool_calls: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list)
     trace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

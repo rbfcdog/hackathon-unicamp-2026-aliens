@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -15,6 +16,8 @@ from app.schemas.documents import DocumentReference
 from app.schemas.processes import LegalProcessCreate
 from app.services.process_documents import process_document_service
 from app.services.processes import legal_process_service
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisExecutionError(RuntimeError):
@@ -52,13 +55,25 @@ class AnalysisService:
                 "documents": list(documents_by_path.values()),
             }
             if process is not None:
+                process_claim_amount = float(process.claim_amount)
                 context_values.update(
                     {
-                        "case_number": process.case_number,
-                        "state": process.state,
-                        "sub_subject": process.sub_subject,
-                        "claim_amount": float(process.claim_amount),
-                        "evidence": EvidenceInput.model_validate(process.evidence),
+                        "state": request.state or (
+                            process.state if process.state.strip().upper() != "NA" else None
+                        ),
+                        "sub_subject": request.sub_subject or process.sub_subject,
+                        "claim_amount": (
+                            request.claim_amount
+                            if request.claim_amount is not None
+                            else (
+                                process_claim_amount
+                                if process_claim_amount > 0.01
+                                else None
+                            )
+                        ),
+                        "evidence": request.evidence or EvidenceInput.model_validate(
+                            process.evidence
+                        ),
                     }
                 )
             context_request = AnalysisRequest.model_validate(context_values)
@@ -105,7 +120,10 @@ class AnalysisService:
             result = AnalysisResult.model_validate(graph_result)
             analysis.status = "completed"
             analysis.result_payload = result.model_dump(mode="json")
-            if result.model_inputs is not None:
+            if (
+                result.model_inputs is not None
+                and result.model_inputs.claim_amount is not None
+            ):
                 await legal_process_service.upsert(
                     session,
                     LegalProcessCreate(
@@ -124,6 +142,10 @@ class AnalysisService:
             raise AnalysisInputError(message) from exc
         except Exception as exc:
             message = "LLM analysis failed"
+            logger.exception(
+                "Analysis execution failed for case %s",
+                normalized_request.case_number,
+            )
             analysis.status = "failed"
             analysis.error_message = message
             await session.commit()
@@ -133,8 +155,61 @@ class AnalysisService:
         await session.refresh(analysis)
         return self.to_response(analysis)
 
+    async def refresh_for_process(
+        self,
+        session: AsyncSession,
+        case_number: str,
+    ) -> AnalysisResponse:
+        documents = await process_document_service.list(session, case_number)
+        process = await legal_process_service.get_by_case_number(
+            session,
+            documents.case_number,
+        )
+        document_references = [
+            DocumentReference(
+                path=document.path,
+                document_type=document.document_type,
+            )
+            for document in documents.documents
+        ]
+        request_values: dict[str, object] = {
+            "case_number": documents.case_number,
+            "documents": document_references,
+        }
+        if not document_references:
+            if process is None:
+                raise AnalysisInputError(
+                    "Cannot refresh analysis without a process or attached documents"
+                )
+            request_values.update(
+                {
+                    "state": process.state,
+                    "sub_subject": process.sub_subject,
+                    "claim_amount": float(process.claim_amount),
+                    "evidence": EvidenceInput.model_validate(process.evidence),
+                }
+            )
+        return await self.create(
+            session,
+            AnalysisRequest.model_validate(request_values),
+        )
+
     async def get(self, session: AsyncSession, analysis_id: uuid.UUID) -> AnalysisResponse | None:
         result = await session.execute(select(Analysis).where(Analysis.id == analysis_id))
+        analysis = result.scalar_one_or_none()
+        return self.to_response(analysis) if analysis else None
+
+    async def latest_for_case(
+        self,
+        session: AsyncSession,
+        case_number: str,
+    ) -> AnalysisResponse | None:
+        result = await session.execute(
+            select(Analysis)
+            .where(Analysis.case_number == case_number)
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        )
         analysis = result.scalar_one_or_none()
         return self.to_response(analysis) if analysis else None
 

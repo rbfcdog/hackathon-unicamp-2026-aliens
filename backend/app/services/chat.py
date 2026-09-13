@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 _STREAM_HEARTBEAT_SECONDS = 12
 _STREAM_MAX_SECONDS = 75
 _STREAM_END = object()
+_DOCUMENT_TOOL_NAMES = {tool.name for tool in DOCUMENT_TOOLS}
+
+
 
 
 @dataclass(frozen=True)
@@ -288,6 +291,9 @@ class ChatService:
         final_answer = ""
         consulted_documents: list[str] = []
         unreadable_documents: list[str] = []
+        tool_calls: list[dict[str, str]] = []
+        tool_call_indexes: dict[str, int] = {}
+
         try:
             while True:
                 try:
@@ -307,20 +313,54 @@ class ChatService:
                 run_name = item.get("name")
                 tags = set(item.get("tags") or item.get("metadata", {}).get("tags") or [])
                 data = item.get("data", {})
-                if event_name == "on_tool_start":
+                if event_name == "on_tool_start" and run_name in _DOCUMENT_TOOL_NAMES:
                     tool_input = data.get("input", {})
                     document_path = (
                         str(tool_input.get("document_path", ""))
                         if isinstance(tool_input, dict)
                         else ""
                     )
+                    call_id = str(item.get("run_id") or f"tool-{len(tool_calls) + 1}")
+                    tool_call_indexes[call_id] = len(tool_calls)
+                    tool_calls.append(
+                        {
+                            "id": call_id,
+                            "tool": str(run_name),
+                            "document_path": document_path,
+                            "status": "active",
+                        }
+                    )
                     yield event(
                         "tool_start",
-                        {"tool": run_name, "document_path": document_path},
+                        {
+                            "id": call_id,
+                            "tool": run_name,
+                            "document_path": document_path,
+                        },
                     )
-                elif event_name == "on_tool_end":
+                elif event_name == "on_tool_end" and run_name in _DOCUMENT_TOOL_NAMES:
                     summary = _tool_result_summary(data.get("output"))
-                    yield event("tool_end", {"tool": run_name, **summary})
+                    call_id = str(item.get("run_id") or "")
+                    call_index = tool_call_indexes.get(call_id)
+                    if call_index is None:
+                        call_index = next(
+                            (
+                                index
+                                for index in range(len(tool_calls) - 1, -1, -1)
+                                if tool_calls[index]["tool"] == run_name
+                                and tool_calls[index]["status"] == "active"
+                            ),
+                            None,
+                        )
+                    if call_index is not None:
+                        tool_calls[call_index]["status"] = (
+                            "error" if summary["status"] == "error" else "complete"
+                        )
+                        call_id = tool_calls[call_index]["id"]
+                    yield event(
+                        "tool_end",
+                        {"id": call_id, "tool": run_name, **summary},
+                    )
                 elif event_name == "on_chat_model_stream" and "chat-final" in tags:
                     text = _message_chunk_text(data.get("chunk"))
                     if text:
@@ -339,6 +379,13 @@ class ChatService:
             if not answer_chunks:
                 yield event("token", {"text": answer})
 
+            persisted_tool_calls = [
+                {
+                    **call,
+                    "status": "complete" if call["status"] == "active" else call["status"],
+                }
+                for call in tool_calls
+            ]
             async with SessionFactory() as session:
                 chat = await self._session(session, context.case_number, context.session_id)
                 assistant_message = ChatMessage(
@@ -346,6 +393,7 @@ class ChatService:
                     role="assistant",
                     content=answer,
                     document_paths=consulted_documents,
+                    tool_calls=persisted_tool_calls,
                     trace_id=context.trace_id,
                 )
                 session.add(assistant_message)

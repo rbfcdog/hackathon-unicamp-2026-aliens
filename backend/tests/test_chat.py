@@ -1,14 +1,15 @@
 import asyncio
 import uuid
 
-import app.services.chat as chat_module
-
 import pytest
+from fastapi.sse import ServerSentEvent
 from httpx import ASGITransport, AsyncClient
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
 
-from app.db.models import ChatSession, LegalProcess
+import app.api.routes.chat as chat_routes
+import app.services.chat as chat_module
+from app.db.models import Analysis, ChatSession, LegalProcess
 from app.db.session import SessionFactory
 from app.graph.chat import build_chat_react_graph
 from app.main import app
@@ -16,8 +17,10 @@ from app.schemas.chat import ChatStreamRequest
 from app.services.chat import ChatService, ChatStreamContext, chat_service
 
 
-@pytest.mark.asyncio(loop_scope="module")
-async def test_process_documents_and_chat_sessions_are_isolated() -> None:
+@pytest.mark.asyncio(loop_scope="session")
+async def test_process_documents_and_chat_sessions_are_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     suffix = str(uuid.uuid4().int)[:18]
     case_number = f"9999999-99.2099.9.99.{suffix[:4]}"
     other_case = f"8888888-88.2099.9.88.{suffix[-4:]}"
@@ -25,6 +28,17 @@ async def test_process_documents_and_chat_sessions_are_isolated() -> None:
     document_id: str | None = None
     chat_id: str | None = None
 
+    analysis_refreshes: list[str] = []
+
+    async def refresh_analysis(_: object, refreshed_case_number: str) -> None:
+        analysis_refreshes.append(refreshed_case_number)
+
+    monkeypatch.setattr(
+        chat_routes.analysis_service,
+        "refresh_for_process",
+        refresh_analysis,
+        raising=False,
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         try:
@@ -74,6 +88,7 @@ async def test_process_documents_and_chat_sessions_are_isolated() -> None:
             assert history.status_code == 200
             assert history.json()["messages"] == []
             assert cross_process_history.status_code == 404
+            assert analysis_refreshes == [case_number, case_number]
         finally:
             if document_id is not None:
                 await client.delete(f"/v1/processes/{case_number}/documents/{document_id}")
@@ -86,7 +101,62 @@ async def test_process_documents_and_chat_sessions_are_isolated() -> None:
                 await session.commit()
 
 
-@pytest.mark.asyncio(loop_scope="module")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_chat_prompt_refreshes_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analysis_refreshes: list[str] = []
+    draft_id: uuid.UUID | None = None
+    chat_id: uuid.UUID | None = None
+    case_number: str | None = None
+
+    async def refresh_analysis(_: object, refreshed_case_number: str) -> None:
+        analysis_refreshes.append(refreshed_case_number)
+
+    async def completed_stream(_: ChatStreamContext):
+        yield ServerSentEvent(event="complete", data={"message": {}})
+
+    monkeypatch.setattr(
+        chat_routes.analysis_service,
+        "refresh_for_process",
+        refresh_analysis,
+        raising=False,
+    )
+    monkeypatch.setattr(chat_routes.chat_service, "stream", completed_stream)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        try:
+            draft_response = await client.post("/v1/processes/drafts")
+            assert draft_response.status_code == 201
+            draft = draft_response.json()
+            draft_id = uuid.UUID(draft["id"])
+            case_number = draft["case_number"]
+
+            session_response = await client.post(f"/v1/processes/{case_number}/chats")
+            assert session_response.status_code == 201
+            chat_id = uuid.UUID(session_response.json()["id"])
+
+            response = await client.post(
+                f"/v1/processes/{case_number}/chats/{chat_id}/messages/stream",
+                json={"message": "Quais documentos ainda preciso anexar?"},
+            )
+            assert response.status_code == 200
+            assert analysis_refreshes == [case_number]
+        finally:
+            async with SessionFactory() as session:
+                if chat_id is not None:
+                    chat = await session.get(ChatSession, chat_id)
+                    if chat is not None:
+                        await session.delete(chat)
+                if draft_id is not None:
+                    draft_process = await session.get(LegalProcess, draft_id)
+                    if draft_process is not None:
+                        await session.delete(draft_process)
+                await session.commit()
+@pytest.mark.asyncio(loop_scope="session")
 async def test_draft_process_allows_a_documentless_chat() -> None:
     draft_id: uuid.UUID | None = None
     chat_id: uuid.UUID | None = None
@@ -133,7 +203,7 @@ async def test_draft_process_allows_a_documentless_chat() -> None:
                 await session.commit()
 
 
-@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.asyncio(loop_scope="session")
 async def test_documentless_chat_skips_the_document_agent() -> None:
     async def unexpected_agent(_: object) -> AIMessage:
         raise AssertionError("The document agent must not run without documents")
@@ -157,17 +227,19 @@ async def test_documentless_chat_skips_the_document_agent() -> None:
     assert result["consulted_documents"] == []
 
 
-
 @pytest.mark.asyncio
-async def test_chat_with_documents_does_not_force_a_read_for_a_greeting() -> None:
+async def test_chat_with_documents_keeps_greeting_as_latest_user_message() -> None:
     agent_calls = 0
+    finalizer_messages: list[object] = []
 
     async def greeting_agent(_: object) -> AIMessage:
         nonlocal agent_calls
         agent_calls += 1
         return AIMessage(content="Olá! Como posso ajudar?")
 
-    async def greeting_finalizer(_: object) -> AIMessage:
+    async def greeting_finalizer(messages: object) -> AIMessage:
+        assert isinstance(messages, list)
+        finalizer_messages.extend(messages)
         return AIMessage(content="Olá! Como posso ajudar?")
 
     graph = build_chat_react_graph(
@@ -182,9 +254,203 @@ async def test_chat_with_documents_does_not_force_a_read_for_a_greeting() -> Non
         }
     )
 
+    user_messages = [
+        message for message in finalizer_messages if isinstance(message, HumanMessage)
+    ]
     assert agent_calls == 1
+    assert isinstance(finalizer_messages[0], SystemMessage)
+    assert "consultados=" not in str(finalizer_messages[0].content)
+    assert "falhas_de_leitura=" not in str(finalizer_messages[0].content)
+    assert [message.content for message in user_messages] == ["olaa"]
     assert result["answer"] == "Olá! Como posso ajudar?"
     assert result["consulted_documents"] == []
+
+
+
+@pytest.mark.asyncio
+async def test_chat_prompts_explain_all_document_gaps_before_a_decision() -> None:
+    agent_messages: list[object] = []
+    finalizer_messages: list[object] = []
+
+    async def decision_agent(messages: object) -> AIMessage:
+        assert isinstance(messages, list)
+        agent_messages.extend(messages)
+        return AIMessage(content="Não há base suficiente para concluir.")
+
+    async def decision_finalizer(messages: object) -> AIMessage:
+        assert isinstance(messages, list)
+        finalizer_messages.extend(messages)
+        return AIMessage(content="Resposta final.")
+
+    graph = build_chat_react_graph(
+        RunnableLambda(decision_agent),
+        RunnableLambda(decision_finalizer),
+    )
+    await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="O que falta para tomar uma decisão?")],
+            "allowed_document_paths": ["uploads/comprovante-de-credito.pdf"],
+            "agent_turns": 0,
+        }
+    )
+
+    document_categories = (
+        "Autos do processo",
+        "Contrato",
+        "Extrato bancário",
+        "Comprovante de crédito",
+        "Dossiê de autenticidade",
+        "Evolução da dívida",
+        "Laudo referenciado",
+    )
+    for messages in (agent_messages, finalizer_messages):
+        assert isinstance(messages[0], SystemMessage)
+        prompt = str(messages[0].content)
+        assert all(category in prompt for category in document_categories)
+        assert "isoladamente não comprova contratação ou anuência" in prompt
+
+    final_prompt = str(finalizer_messages[0].content)
+    assert "estado de cada uma das sete categorias documentais" in final_prompt
+    assert "presente e útil, ausente, ou autorizada mas não lida/ilegível" in final_prompt
+    assert "recomendar acordo, defesa ou revisão humana" in final_prompt
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_chat_persists_completed_document_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DocumentGraph:
+        async def astream_events(self, *_: object, **__: object):
+            tool_run_id = str(uuid.uuid4())
+            yield {
+                "event": "on_tool_start",
+                "name": "read_pdf_document",
+                "run_id": tool_run_id,
+                "data": {"input": {"document_path": "cases/evidence.pdf"}},
+            }
+            yield {
+                "event": "on_tool_end",
+                "name": "read_pdf_document",
+                "run_id": tool_run_id,
+                "data": {"output": '{"status":"ok","document_path":"cases/evidence.pdf"}'},
+            }
+            yield {
+                "event": "on_chain_end",
+                "name": "finalize",
+                "data": {
+                    "output": {
+                        "answer": "O documento confirma a informação relevante.",
+                        "consulted_documents": ["cases/evidence.pdf"],
+                        "unreadable_documents": [],
+                    }
+                },
+            }
+
+    monkeypatch.setattr(chat_module, "get_compiled_chat_graph", lambda: DocumentGraph())
+    draft_id: uuid.UUID | None = None
+    chat_id: uuid.UUID | None = None
+    case_number: str | None = None
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        try:
+            draft_response = await client.post("/v1/processes/drafts")
+            draft = draft_response.json()
+            draft_id = uuid.UUID(draft["id"])
+            case_number = draft["case_number"]
+            chat_response = await client.post(f"/v1/processes/{case_number}/chats")
+            chat_id = uuid.UUID(chat_response.json()["id"])
+
+            async with SessionFactory() as session:
+                context = await chat_service.prepare_stream(
+                    session,
+                    case_number,
+                    chat_id,
+                    ChatStreamRequest(message="O que consta no documento?"),
+                )
+            events = [event async for event in chat_service.stream(context)]
+
+            tool_starts = [event for event in events if event.event == "tool_start"]
+            tool_ends = [event for event in events if event.event == "tool_end"]
+            assert tool_starts[0].data["id"] == tool_ends[0].data["id"]
+            assert tool_ends[0].data["status"] == "ok"
+            completed = next(event for event in events if event.event == "complete")
+            assert completed.data["message"]["tool_calls"] == [
+                {
+                    "id": tool_starts[0].data["id"],
+                    "tool": "read_pdf_document",
+                    "document_path": "cases/evidence.pdf",
+                    "status": "complete",
+                }
+            ]
+
+            history = await client.get(f"/v1/processes/{case_number}/chats/{chat_id}")
+            assert history.status_code == 200
+            assert (
+                history.json()["messages"][-1]["tool_calls"]
+                == completed.data["message"]["tool_calls"]
+            )
+        finally:
+            async with SessionFactory() as session:
+                if chat_id is not None:
+                    chat = await session.get(ChatSession, chat_id)
+                    if chat is not None:
+                        await session.delete(chat)
+                if draft_id is not None:
+                    draft_process = await session.get(LegalProcess, draft_id)
+                    if draft_process is not None:
+                        await session.delete(draft_process)
+                await session.commit()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_latest_analysis_returns_the_persisted_case_analysis() -> None:
+    case_number = f"RASCUNHO-{uuid.uuid4()}"
+    analysis_id: uuid.UUID | None = None
+
+    try:
+        async with SessionFactory() as session:
+            analysis = Analysis(
+                case_number=case_number,
+                status="failed",
+                request_payload={
+                    "case_number": case_number,
+                    "state": "SP",
+                    "sub_subject": "generic",
+                    "claim_amount": 1_000,
+                    "evidence": {
+                        "contract": False,
+                        "bank_statement": False,
+                        "credit_proof": False,
+                        "dossier": False,
+                        "debt_evolution": False,
+                        "referenced_report": False,
+                    },
+                    "documents": [],
+                },
+                result_payload=None,
+                error_message="analysis failed",
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(analysis)
+            analysis_id = analysis.id
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/v1/analyses/latest", params={"case_number": case_number})
+
+        assert response.status_code == 200
+        assert response.json()["id"] == str(analysis_id)
+        assert response.json()["case_number"] == case_number
+        assert response.json()["error_message"] == "analysis failed"
+    finally:
+        if analysis_id is not None:
+            async with SessionFactory() as session:
+                analysis = await session.get(Analysis, analysis_id)
+                if analysis is not None:
+                    await session.delete(analysis)
+                    await session.commit()
+
 
 @pytest.mark.asyncio
 async def test_chat_stream_reports_a_timeout_instead_of_waiting_indefinitely(

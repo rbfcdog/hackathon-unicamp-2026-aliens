@@ -22,36 +22,34 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { AnalysisResultPanel } from "./analysis-result";
 import { apiEventStream, apiFetch } from "@/lib/api";
 import { DOCUMENT_LABELS } from "@/lib/legal-documents";
 import type {
+  AnalysisResponse,
   ChatHistoryResponse,
   ChatMessage,
   ChatSession,
   ChatStreamEvent,
+  ChatToolCall,
+  LegalProcess,
   DocumentType,
   ProcessDocument,
   ProcessDocumentListResponse,
-  ReviewResponse,
 } from "@/lib/types";
 
-type ActivityItem = {
-  id: string;
-  label: string;
-  detail: string;
-  status: "active" | "complete" | "error";
-};
+type ActivityItem = ChatToolCall | (Omit<ChatToolCall, "status"> & { status: "active" });
 
 type Props = {
   caseNumber: string;
-  defaultQuestion: string;
   isDraft: boolean;
+  onProcessUpdated: (legalProcess: LegalProcess) => void;
 };
 type WorkspaceArtifact =
-  | { kind: "document"; document: ProcessDocument }
-  | { kind: "review" };
+  | { kind: "document"; document: ProcessDocument; page?: number }
+  | { kind: "analysis" };
 
 const DOCUMENT_TYPES: Array<{ value: DocumentType; label: string }> = [
   { value: "case_record", label: "Autos do processo" },
@@ -63,6 +61,124 @@ const DOCUMENT_TYPES: Array<{ value: DocumentType; label: string }> = [
   { value: "referenced_report", label: "Laudo referenciado" },
   { value: "other", label: "Outro documento" },
 ];
+
+const TOOL_LABELS: Record<string, string> = {
+  read_pdf_document: "Leitura de PDF",
+  read_spreadsheet_document: "Leitura de planilha",
+  read_csv_document: "Leitura de CSV",
+};
+const CITATION_GROUP_PATTERN = /\[([^\]\n]+)\]/gu;
+const CITATION_ENTRY_PATTERN =
+  /^(.+?)\s+—\s+p\.\s*(\d+)(?:\s*[-–]\s*(\d+))?$/iu;
+
+function cleanChatContent(content: string) {
+  return content.replaceAll("**", "").replaceAll("`", "");
+}
+
+type CitationOpenHandler = (documentPath: string, page: number) => void | Promise<void>;
+
+function citationNodes(content: string, onOpenCitation: CitationOpenHandler): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of content.matchAll(CITATION_GROUP_PATTERN)) {
+    const [citationGroup, groupContent] = match;
+    const citations = groupContent
+      .split(/\s*;\s*/u)
+      .map((entry) => entry.match(CITATION_ENTRY_PATTERN));
+    if (citations.some((citation) => citation === null)) continue;
+
+    const index = match.index ?? 0;
+    if (index > cursor) nodes.push(content.slice(cursor, index));
+    citations.forEach((citation, citationIndex) => {
+      if (!citation) return;
+      const [, documentPath, startPage, endPage] = citation;
+      const pageLabel = endPage ? `p. ${startPage}–${endPage}` : `p. ${startPage}`;
+      if (citationIndex > 0) nodes.push(" ");
+      nodes.push(
+        <button
+          aria-label={`Abrir ${documentPath} na ${pageLabel}`}
+          className="citation-link"
+          key={`${documentPath}-${startPage}-${index}`}
+          onClick={() => void onOpenCitation(documentPath.trim(), Number(startPage))}
+          title={`${documentPath} · ${pageLabel}`}
+          type="button"
+        >
+          <FileText aria-hidden="true" size={11} />
+          {pageLabel}
+        </button>,
+      );
+    });
+    cursor = index + citationGroup.length;
+  }
+  if (cursor < content.length) nodes.push(content.slice(cursor));
+  return nodes;
+}
+
+function ChatProse({
+  content,
+  onOpenCitation,
+}: {
+  content: string;
+  onOpenCitation: CitationOpenHandler;
+}) {
+  return (
+    <div className="chat-prose">
+      {cleanChatContent(content)
+        .split(/\n\s*\n/)
+        .filter(Boolean)
+        .map((paragraph, index) => (
+          <p key={`${paragraph.slice(0, 32)}-${index}`}>
+            {citationNodes(paragraph, onOpenCitation)}
+          </p>
+        ))}
+    </div>
+  );
+}
+
+function ToolCallList({ calls }: { calls: ActivityItem[] }) {
+  if (calls.length === 0) return null;
+  return (
+    <div className="tool-call-list" aria-live="polite">
+      {calls.map((call) => {
+        const label = TOOL_LABELS[call.tool] ?? call.tool;
+        const running = call.status === "active";
+        return (
+          <details className={`tool-call ${call.status}`} key={call.id}>
+            <summary>
+              {running ? (
+                <span aria-label="Ferramenta em execução" className="tool-call-dots">
+                  <i /><i /><i />
+                </span>
+              ) : (
+                <i aria-hidden="true" className="tool-call-status" />
+              )}
+              <span>{label}</span>
+              <small>{running ? "consultando" : call.status === "error" ? "falhou" : "consultado"}</small>
+            </summary>
+            <div>
+              <code>{call.tool}</code>
+
+              {call.document_path && <span title={call.document_path}>{call.document_path}</span>}
+            </div>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+function AssistantTypingIndicator() {
+  return (
+    <div
+      aria-label="Assistente preparando resposta"
+      className="assistant-typing-dots"
+      role="status"
+    >
+      <i />
+      <i />
+      <i />
+    </div>
+  );
+}
 
 function formatSize(sizeBytes: number) {
   if (sizeBytes < 1024 * 1024) return `${Math.ceil(sizeBytes / 1024)} KB`;
@@ -82,7 +198,7 @@ function eventData<Name extends keyof ChatEventMap>(
   return event.data as ChatEventMap[Name];
 }
 
-export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
+export function ProcessChat({ caseNumber, isDraft, onProcessUpdated }: Props) {
   const fileInputId = useId();
   const documentsMenuId = useId();
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -108,9 +224,8 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
   const [documentsOpen, setDocumentsOpen] = useState(false);
   const dragDepthRef = useRef(0);
   const [artifact, setArtifact] = useState<WorkspaceArtifact | null>(null);
-  const [reviewQuestion, setReviewQuestion] = useState(defaultQuestion);
-  const [review, setReview] = useState<ReviewResponse | null>(null);
-  const [reviewing, setReviewing] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const flushTokenQueue = useCallback(() => {
     const queued = tokenQueueRef.current;
     if (!queued) {
@@ -169,13 +284,17 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
 
     async function load() {
       try {
-        const [documentResponse, sessions] = await Promise.all([
+        const [documentResponse, sessions, latestAnalysis] = await Promise.all([
           apiFetch<ProcessDocumentListResponse>(`${processPath}/documents`, {
             signal: controller.signal,
           }),
           apiFetch<ChatSession[]>(`${processPath}/chats`, {
             signal: controller.signal,
           }),
+          apiFetch<AnalysisResponse | null>(
+            `/v1/analyses/latest?case_number=${encodeURIComponent(caseNumber)}`,
+            { signal: controller.signal },
+          ),
         ]);
         const currentSession =
           sessions[0] ??
@@ -191,6 +310,7 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
         setDocuments(documentResponse.documents);
         setSession(currentSession);
         setMessages(history.messages);
+        setAnalysis(latestAnalysis);
       } catch (caught: unknown) {
         if (!active || (caught instanceof DOMException && caught.name === "AbortError")) {
           return;
@@ -227,12 +347,115 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
     });
   }, [messages, streamingText, activity, streaming]);
 
-  const refreshDocuments = useCallback(async () => {
+  const refreshDocuments = useCallback(async (): Promise<ProcessDocument[]> => {
     const response = await apiFetch<ProcessDocumentListResponse>(
       `${processPath}/documents`,
     );
     setDocuments(response.documents);
+    return response.documents;
   }, [processPath]);
+
+  const refreshLatestAnalysis = useCallback(async () => {
+    const latestAnalysis = await apiFetch<AnalysisResponse | null>(
+      `/v1/analyses/latest?case_number=${encodeURIComponent(caseNumber)}`,
+    );
+    setAnalysis(latestAnalysis);
+  }, [caseNumber]);
+
+  const refreshProcessTitle = useCallback(async () => {
+    try {
+      const updated = await apiFetch<LegalProcess>(`${processPath}/infer-title`, {
+        method: "POST",
+      });
+      onProcessUpdated(updated);
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Não foi possível atualizar o nome do processo.",
+      );
+    }
+  }, [onProcessUpdated, processPath]);
+
+  const openCitation = useCallback(async (documentPath: string, page: number) => {
+    let decodedPath = documentPath.trim();
+    try {
+      decodedPath = decodeURIComponent(decodedPath);
+    } catch {
+      // The model normally cites plain paths; retain malformed percent sequences verbatim.
+    }
+    const normalizedPath = decodedPath
+      .normalize("NFC")
+      .replaceAll("\\", "/")
+      .replace(/^\/+/u, "")
+      .replace(/^data\//u, "");
+    const citedFilename = normalizedPath.split("/").at(-1);
+    const findDocument = (candidates: ProcessDocument[]) => {
+      const exact = candidates.find((document) => {
+        const candidatePath = document.path
+          .normalize("NFC")
+          .replaceAll("\\", "/")
+          .replace(/^\/+/u, "")
+          .replace(/^data\//u, "");
+        return candidatePath === normalizedPath;
+      });
+      if (exact || !citedFilename) return exact;
+      const filenameMatches = candidates.filter(
+        (document) =>
+          document.path.normalize("NFC").replaceAll("\\", "/").split("/").at(-1) ===
+          citedFilename,
+      );
+      return filenameMatches.length === 1 ? filenameMatches[0] : undefined;
+    };
+
+    let citedDocument = findDocument(documents);
+    if (!citedDocument) {
+      try {
+        citedDocument = findDocument(await refreshDocuments());
+      } catch (caught: unknown) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Não foi possível atualizar os documentos do processo.",
+        );
+        return;
+      }
+    }
+    if (!citedDocument) {
+      setError("O documento citado não está mais anexado a este processo.");
+      return;
+    }
+    setError(null);
+    setArtifact({ kind: "document", document: citedDocument, page });
+  }, [documents, refreshDocuments]);
+
+  const runAnalysis = useCallback(async (documentsToAnalyze = documents) => {
+    if (documentsToAnalyze.length === 0) return;
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const response = await apiFetch<AnalysisResponse>("/v1/analyses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          case_number: caseNumber,
+          documents: documentsToAnalyze.map((document) => ({
+            path: document.path,
+            document_type: document.document_type,
+          })),
+        }),
+      });
+      setAnalysis(response);
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "A análise documental não pôde ser concluída.",
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [caseNumber, documents]);
 
   async function startNewChat() {
     streamAbortRef.current?.abort();
@@ -271,16 +494,18 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
     form.append("file", selectedFile);
     form.append("document_type", documentType);
     try {
-      const uploaded = await apiFetch<ProcessDocument>(`${processPath}/documents`, {
+      await apiFetch<ProcessDocument>(`${processPath}/documents`, {
         method: "POST",
         body: form,
       });
       await refreshDocuments();
+      await refreshLatestAnalysis();
       setFile(null);
       setUploadOpen(false);
-      setArtifact({ kind: "document", document: uploaded });
+      setArtifact({ kind: "analysis" });
       const input = document.getElementById(fileInputId) as HTMLInputElement | null;
       if (input) input.value = "";
+      await refreshProcessTitle();
     } catch (caught: unknown) {
       setError(
         caught instanceof Error
@@ -290,7 +515,14 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
     } finally {
       setUploading(false);
     }
-  }, [documentType, fileInputId, processPath, refreshDocuments]);
+  }, [
+    documentType,
+    fileInputId,
+    processPath,
+    refreshDocuments,
+    refreshLatestAnalysis,
+    refreshProcessTitle,
+  ]);
 
   async function uploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -372,6 +604,7 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
       ) {
         setArtifact(null);
       }
+      void refreshProcessTitle();
     } catch (caught: unknown) {
       setError(
         caught instanceof Error
@@ -381,34 +614,9 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
     }
   }
 
-  async function runReview() {
-    const question = reviewQuestion.trim();
-    if (question.length < 10 || documents.length === 0) return;
-    setReviewing(true);
-    setError(null);
-    try {
-      const response = await apiFetch<ReviewResponse>("/v1/judge/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          case_number: caseNumber,
-          question,
-          documents: documents.map((document) => ({
-            path: document.path,
-            document_type: document.document_type,
-          })),
-        }),
-      });
-      setReview(response);
-    } catch (caught: unknown) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "A revisão documental não pôde ser concluída.",
-      );
-    } finally {
-      setReviewing(false);
-    }
+  async function refreshAnalysis() {
+    setArtifact({ kind: "analysis" });
+    await runAnalysis();
   }
 
   const sendMessage = useCallback(async (content = message) => {
@@ -426,6 +634,7 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
       role: "user",
       content: cleanMessage,
       document_paths: [],
+      tool_calls: [],
       trace_id: null,
       created_at: new Date().toISOString(),
     };
@@ -443,16 +652,8 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
         { message: cleanMessage },
         ({ event, data }) => {
           const streamEvent = { event, data } as ChatStreamEvent;
-          const ready = eventData(streamEvent, "ready");
-          if (ready) {
-            setActivity([
-              {
-                id: `ready-${ready.trace_id}`,
-                label: "Fluxo conectado",
-                detail: `${ready.document_count} documento(s) no escopo`,
-                status: "complete",
-              },
-            ]);
+          if (eventData(streamEvent, "ready")) {
+            void refreshProcessTitle();
             return;
           }
 
@@ -461,9 +662,9 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
             setActivity((current) => [
               ...current,
               {
-                id: `${toolStart.tool}-${toolStart.document_path}-${current.length}`,
-                label: "Consultando fonte",
-                detail: toolStart.document_path || toolStart.tool,
+                id: toolStart.id,
+                tool: toolStart.tool,
+                document_path: toolStart.document_path,
                 status: "active",
               },
             ]);
@@ -472,21 +673,16 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
 
           const toolEnd = eventData(streamEvent, "tool_end");
           if (toolEnd) {
-            setActivity((current) => {
-              const next = [...current];
-              const index = next.findLastIndex(
-                (item) =>
-                  item.status === "active" &&
-                  (!toolEnd.document_path || item.detail === toolEnd.document_path),
-              );
-              if (index >= 0) {
-                next[index] = {
-                  ...next[index],
-                  status: toolEnd.status === "error" ? "error" : "complete",
-                };
-              }
-              return next;
-            });
+            setActivity((current) =>
+              current.map((item) =>
+                item.id === toolEnd.id
+                  ? {
+                      ...item,
+                      status: toolEnd.status === "error" ? "error" : "complete",
+                    }
+                  : item,
+              ),
+            );
             return;
           }
 
@@ -514,11 +710,9 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
       }
       setMessages((current) => [...current, completed.message]);
       setStreamingText("");
-      setActivity((current) =>
-        current.map((item) =>
-          item.status === "active" ? { ...item, status: "complete" } : item,
-        ),
-      );
+      setActivity([]);
+      void refreshProcessTitle();
+      void refreshLatestAnalysis();
     } catch (caught: unknown) {
       resetTokenStream();
       setStreamingText("");
@@ -537,7 +731,9 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
     enqueueToken,
     message,
     processPath,
+    refreshLatestAnalysis,
     resetTokenStream,
+    refreshProcessTitle,
     session,
     streaming,
   ]);
@@ -551,8 +747,9 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
   }
 
   const openedDocument = artifact?.kind === "document" ? artifact.document : null;
+  const openedDocumentPage = artifact?.kind === "document" ? artifact.page ?? 1 : 1;
   const openedDocumentUrl = openedDocument
-    ? `/api/backend${processPath}/documents/content?document_path=${encodeURIComponent(openedDocument.path)}`
+    ? `/api/backend${processPath}/documents/content?document_path=${encodeURIComponent(openedDocument.path)}#page=${openedDocumentPage}`
     : null;
 
   return (
@@ -575,29 +772,22 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
 
         <nav className="workspace-tree" aria-label="Arquivos do processo">
           <button
-            className={`workspace-tree-item review${artifact?.kind === "review" ? " selected" : ""}`}
+            className={`workspace-tree-item analysis${artifact?.kind === "analysis" ? " selected" : ""}`}
             disabled={documents.length === 0}
-            onClick={() => setArtifact({ kind: "review" })}
+            onClick={() => setArtifact({ kind: "analysis" })}
             type="button"
           >
             <ScanSearch size={16} />
-            <span>Revisão estratégica</span>
+            <span>Análise estratégica</span>
           </button>
           <button
             className="primary-button workspace-analysis-button"
-            disabled={
-              reviewing ||
-              documents.length === 0 ||
-              reviewQuestion.trim().length < 10
-            }
-            onClick={() => {
-              setArtifact({ kind: "review" });
-              void runReview();
-            }}
+            disabled={analyzing || documents.length === 0}
+            onClick={() => void refreshAnalysis()}
             type="button"
           >
-            {reviewing ? <span className="spinner" /> : <ScanSearch size={15} />}
-            {reviewing ? "Analisando documentos" : "Analisar documentos"}
+            {analyzing ? <span className="spinner" /> : <ScanSearch size={15} />}
+            {analyzing ? "Analisando documentos" : analysis ? "Atualizar análise" : "Analisar documentos"}
           </button>
           <button
             aria-controls={documentsMenuId}
@@ -723,7 +913,7 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
         <div className="chat-transcript" ref={transcriptRef} aria-live="polite">
           {loading ? (
             <div className="chat-empty"><span className="spinner" /> Abrindo histórico</div>
-          ) : messages.length === 0 && !streamingText ? (
+          ) : messages.length === 0 && !streamingText && activity.length === 0 ? (
             <div className="chat-empty">
               <Bot size={26} />
               <strong>{isDraft ? "Comece por aqui" : "Pergunte sobre os autos"}</strong>
@@ -738,30 +928,34 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
           {messages.map((item) => (
             <article className={`chat-message ${item.role}`} key={item.id}>
               <span>{item.role === "user" ? "Você" : "Assistente"}</span>
-              <p>{item.content.replaceAll("**", "").replaceAll("`", "")}</p>
+              {item.role === "assistant" ? (
+                <>
+                  <ToolCallList calls={item.tool_calls} />
+                  <ChatProse content={item.content} onOpenCitation={openCitation} />
+                </>
+              ) : (
+                <p>{cleanChatContent(item.content)}</p>
+              )}
               {item.role === "assistant" && item.document_paths.length > 0 && (
                 <footer>{item.document_paths.length} fonte(s) consultada(s)</footer>
               )}
             </article>
           ))}
 
-          {streamingText && (
+          {streaming && (
             <article className="chat-message assistant streaming">
               <span>Assistente</span>
-              <p>{streamingText.replaceAll("**", "").replaceAll("`", "")}</p>
+              <ToolCallList calls={activity} />
+              {streamingText ? (
+                <ChatProse content={streamingText} onOpenCitation={openCitation} />
+              ) : (
+                <AssistantTypingIndicator />
+              )}
             </article>
           )}
         </div>
 
-        <div className="chat-activity" aria-live="polite">
-          {activity.slice(-4).map((item) => (
-            <div className={`activity-row ${item.status}`} key={item.id}>
-              <i aria-hidden="true" />
-              <span>{item.label}</span>
-              <small title={item.detail}>{item.detail}</small>
-            </div>
-          ))}
-        </div>
+
 
         <div className="chat-composer">
           <label className="sr-only" htmlFor="process-chat-message">Mensagem</label>
@@ -779,7 +973,8 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
             value={message}
           />
           <button
-            aria-label="Enviar mensagem"
+            aria-busy={streaming}
+            aria-label={streaming ? "Enviando mensagem" : "Enviar mensagem"}
             disabled={
               loading ||
               streaming ||
@@ -799,12 +994,12 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
         <aside className="artifact-panel" aria-labelledby="artifact-title">
           <header className="artifact-panel-heading">
             <div>
-              {artifact.kind === "review" ? <ScanSearch size={17} /> : <FileText size={17} />}
+              {artifact.kind === "analysis" ? <ScanSearch size={17} /> : <FileText size={17} />}
               <span>
-                <small>{artifact.kind === "review" ? "Revisão" : "Documento"}</small>
+                <small>{artifact.kind === "analysis" ? "Análise" : "Documento"}</small>
                 <strong id="artifact-title">
-                  {artifact.kind === "review"
-                    ? "Revisão estratégica"
+                  {artifact.kind === "analysis"
+                    ? "Análise estratégica"
                     : artifact.document.original_filename}
                 </strong>
               </span>
@@ -830,38 +1025,29 @@ export function ProcessChat({ caseNumber, defaultQuestion, isDraft }: Props) {
               </footer>
             </div>
           ) : (
-            <div className="artifact-review">
-              <section className="review-command">
-                <label htmlFor="review-question">Questão para revisão</label>
-                <textarea
-                  disabled={reviewing}
-                  id="review-question"
-                  maxLength={2000}
-                  onChange={(event) => setReviewQuestion(event.target.value)}
-                  rows={4}
-                  value={reviewQuestion}
-                />
+            <div className="artifact-analysis">
+              <section className="analysis-command">
+                <div>
+                  <span className="section-kicker">Análise persistida</span>
+                  <p>A recomendação e a faixa de acordo são recalculadas com todos os documentos atuais.</p>
+                </div>
                 <button
                   className="primary-button"
-                  disabled={
-                    reviewing ||
-                    documents.length === 0 ||
-                    reviewQuestion.trim().length < 10
-                  }
-                  onClick={() => void runReview()}
+                  disabled={analyzing || documents.length === 0}
+                  onClick={() => void refreshAnalysis()}
                   type="button"
                 >
-                  {reviewing ? <span className="spinner" /> : <ScanSearch size={15} />}
-                  {reviewing ? "Revisando autos" : review ? "Executar nova revisão" : "Revisar documentos"}
+                  {analyzing ? <span className="spinner" /> : <ScanSearch size={15} />}
+                  {analyzing ? "Atualizando análise" : analysis ? "Atualizar análise" : "Analisar documentos"}
                 </button>
               </section>
-              {review ? (
-                <AnalysisResultPanel review={review} />
+              {analysis ? (
+                <AnalysisResultPanel analysis={analysis} />
               ) : (
                 <div className="artifact-empty">
                   <ScanSearch size={26} />
-                  <strong>Revisão documental isolada</strong>
-                  <p>Os documentos da pasta serão enviados ao fluxo real de revisão jurídica.</p>
+                  <strong>Análise dos documentos</strong>
+                  <p>Execute a análise para registrar a recomendação de defesa ou acordo e os valores sugeridos.</p>
                 </div>
               )}
             </div>

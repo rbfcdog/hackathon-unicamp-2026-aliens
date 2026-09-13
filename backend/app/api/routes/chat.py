@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -16,11 +17,21 @@ from app.schemas.chat import (
     ProcessDocumentResponse,
 )
 from app.schemas.documents import EvidenceDocumentType
+from app.services.analysis import AnalysisExecutionError, AnalysisInputError, analysis_service
 from app.services.chat import chat_service
 from app.services.process_documents import process_document_service
 
 router = APIRouter(prefix="/processes/{case_number}")
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+logger = logging.getLogger(__name__)
+
+
+async def _refresh_process_analysis(session: AsyncSession, case_number: str) -> None:
+    try:
+        await analysis_service.refresh_for_process(session, case_number)
+    except (AnalysisInputError, AnalysisExecutionError):
+        logger.warning("Automatic process analysis refresh failed", exc_info=True)
 
 
 @router.get(
@@ -84,13 +95,15 @@ async def upload_process_document(
             detail="Upload filename is required",
         )
     try:
-        return await process_document_service.upload(
+        document = await process_document_service.upload(
             session,
             case_number,
             file.filename,
             file.file,
             document_type,
         )
+        await _refresh_process_analysis(session, document.case_number)
+        return document
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -201,5 +214,13 @@ async def stream_process_chat_message(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
+    await _refresh_process_analysis(session, context.case_number)
+    completion: ServerSentEvent | None = None
     async for stream_event in chat_service.stream(context):
+        if stream_event.event == "complete":
+            completion = stream_event
+            continue
         yield stream_event
+
+    if completion is not None:
+        yield completion
