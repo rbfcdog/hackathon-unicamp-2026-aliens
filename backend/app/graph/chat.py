@@ -1,4 +1,7 @@
 import json
+import re
+import unicodedata
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
@@ -21,6 +24,26 @@ _DOCUMENT_DECISION_GUIDANCE = (
     "discrimina saldo, parcelas, encargos e amortizações; Laudo referenciado traz a conclusão "
     "técnica mencionada nos autos ou demais documentos. "
 )
+_FRIENDLY_SECTION_CITATION_PATTERN = re.compile(
+    r"^(?P<prefix>\s*(?:\d+[.)]\s*)?)(?P<label>[^\[\]\n:]{3,80}?)\s+"
+    r"[—-]\s+p[aá]gina(?:s)?\s+(?P<start>\d+)"
+    r"(?:\s*(?:a|e|[-–])\s*(?P<end>\d+))?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_FRIENDLY_PAGE_LINE_PATTERN = re.compile(
+    r"^(?P<body>\s*(?:[-*]\s*)?p[aá]gina\s+(?P<page>\d+)\s*:.+)$",
+    re.IGNORECASE,
+)
+_FRIENDLY_SECTION_LABEL_PATTERN = re.compile(
+    r"^(?P<prefix>\s*(?:\d+[.)]\s*))(?P<label>[^\[\]\n:]{3,80}?)\s*$",
+    re.IGNORECASE,
+)
+_FRIENDLY_STANDALONE_PAGE_PATTERN = re.compile(
+    r"^(?P<prefix>\s*)p\.\s*(?P<start>\d+)"
+    r"(?:\s*[-–]\s*(?P<end>\d+))?\s*$",
+    re.IGNORECASE,
+)
+_CITATION_STOP_WORDS = frozenset({"a", "as", "da", "das", "de", "do", "dos", "e"})
 
 _AGENT_SYSTEM_PROMPT = (
     "Você é o agente ReAct documental de um processo jurídico específico. "
@@ -59,10 +82,11 @@ _FINAL_SYSTEM_PROMPT = (
     "uma citação no formato literal [caminho_exato_retornado_pela_ferramenta — p. N]. Para "
     "intervalos, use [caminho_exato — p. N–M]; para múltiplas fontes, repita entradas completas "
     "separadas por ponto e vírgula dentro dos colchetes. O caminho deve ser exatamente o "
-    "document_path consultado, nunca um nome amigável. Nunca crie linhas 'Base:', listas de "
-    "fontes ou referências soltas: a citação deve ficar imediatamente após a frase comprovada. "
-    "Indique lacunas e contradições relevantes em um parágrafo final. Quando a pergunta for "
-    "sobre o que falta para tomar uma "
+    "document_path consultado, nunca um nome amigável. Nunca escreva referências como "
+    "'Laudo referenciado — páginas 1 a 2': esse texto não gera link. Nunca crie linhas 'Base:', "
+    "listas de fontes ou referências soltas: a citação entre colchetes deve ficar imediatamente "
+    "após a frase comprovada. Indique lacunas e contradições relevantes em um parágrafo final. "
+    "Quando a pergunta for sobre o que falta para tomar uma "
     "decisão, explique em texto corrido o estado de cada uma das sete categorias documentais: "
     "Autos do processo, Contrato, Extrato bancário, Comprovante de crédito, Dossiê de "
     "autenticidade, Evolução da dívida e Laudo referenciado. Para cada categoria, diga se está "
@@ -161,6 +185,86 @@ def _message_text(message: AIMessage) -> str:
     return "".join(parts)
 
 
+def _citation_tokens(value: str) -> set[str]:
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value).casefold()
+        if not unicodedata.combining(character)
+    )
+    return {
+        token for token in re.findall(r"[a-z]+", normalized) if token not in _CITATION_STOP_WORDS
+    }
+
+
+def _resolve_friendly_citation_path(
+    label: str,
+    records: dict[str, dict[str, Any]],
+) -> str | None:
+    label_tokens = _citation_tokens(label)
+    if not label_tokens:
+        return None
+    matches = []
+    for path, payload in records.items():
+        if payload.get("status") not in {"ok", "empty"}:
+            continue
+        path_tokens = _citation_tokens(Path(path).stem)
+        if label_tokens <= path_tokens:
+            matches.append(path)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _normalize_friendly_page_references(
+    answer: str,
+    records: dict[str, dict[str, Any]],
+) -> str:
+    lines = []
+    active_path: str | None = None
+    for line in answer.splitlines():
+        section_match = _FRIENDLY_SECTION_CITATION_PATTERN.match(line)
+        if section_match:
+            active_path = _resolve_friendly_citation_path(
+                section_match.group("label"),
+                records,
+            )
+            if active_path is not None:
+                start_page = section_match.group("start")
+                end_page = section_match.group("end")
+                page_range = f"{start_page}–{end_page}" if end_page else start_page
+                lines.append(
+                    f"{section_match.group('prefix')}{section_match.group('label').strip()} "
+                    f"[{active_path} — p. {page_range}]"
+                )
+                continue
+
+        section_label_match = _FRIENDLY_SECTION_LABEL_PATTERN.match(line)
+        if section_label_match:
+            active_path = _resolve_friendly_citation_path(
+                section_label_match.group("label"),
+                records,
+            )
+            lines.append(line)
+            continue
+
+        standalone_page_match = _FRIENDLY_STANDALONE_PAGE_PATTERN.match(line)
+        if standalone_page_match and active_path is not None:
+            start_page = standalone_page_match.group("start")
+            end_page = standalone_page_match.group("end")
+            page_range = f"{start_page}–{end_page}" if end_page else start_page
+            lines.append(
+                f"{standalone_page_match.group('prefix')}[{active_path} — p. {page_range}]"
+            )
+            continue
+
+        page_match = _FRIENDLY_PAGE_LINE_PATTERN.match(line)
+        if page_match and active_path is not None and "[" not in line:
+            lines.append(
+                f"{page_match.group('body')} [{active_path} — p. {page_match.group('page')}]"
+            )
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def build_chat_react_graph(
     agent_model: Runnable[Any, Any],
     final_model: Runnable[Any, Any],
@@ -201,6 +305,7 @@ def build_chat_react_graph(
         answer = _message_text(response).strip()
         if not answer:
             raise ValueError("Chat final model returned an empty answer")
+        answer = _normalize_friendly_page_references(answer, records)
         return {
             "messages": [response],
             "answer": answer,

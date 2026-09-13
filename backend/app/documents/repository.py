@@ -203,9 +203,7 @@ class DocumentRepository:
             raise ValueError(f"start_page exceeds the PDF page count ({total_pages})")
 
         last_page = (
-            total_pages
-            if max_pages is None
-            else min(total_pages, start_page + max_pages - 1)
+            total_pages if max_pages is None else min(total_pages, start_page + max_pages - 1)
         )
         extracted_pages = pymupdf4llm.to_markdown(
             str(path),
@@ -286,11 +284,7 @@ class DocumentRepository:
             total_columns = sheet.max_column or 0
             if start_row > total_rows:
                 raise ValueError(f"start_row exceeds the worksheet row count ({total_rows})")
-            end_row = (
-                total_rows
-                if max_rows is None
-                else min(total_rows, start_row + max_rows - 1)
-            )
+            end_row = total_rows if max_rows is None else min(total_rows, start_row + max_rows - 1)
             lines: list[str] = []
             characters = 0
             truncated = False
@@ -394,8 +388,7 @@ class DocumentRepository:
             "total_rows": total_rows,
             "total_columns": total_columns,
             "content": content,
-            "truncated": content_truncated
-            or (end_row is not None and end_row < total_rows),
+            "truncated": content_truncated or (end_row is not None and end_row < total_rows),
         }
 
     @staticmethod

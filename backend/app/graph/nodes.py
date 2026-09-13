@@ -132,9 +132,7 @@ async def extract_model_inputs(state: AnalysisState) -> dict[str, object]:
             )
     document_context = "\n\n".join(context_parts)
     if not document_context:
-        raise AnalysisInputResolutionError(
-            "Nenhum documento enviado pôde ser lido para a análise."
-        )
+        raise AnalysisInputResolutionError("Nenhum documento enviado pôde ser lido para a análise.")
 
     extractor = ChatOpenAI(
         model=settings.openai_model,
@@ -250,9 +248,7 @@ def estimate_risk(state: AnalysisState) -> dict[str, object]:
     )
     return {
         "loss_probability": estimate.loss_probability,
-        "expected_condemnation": (
-            estimate.expected_condemnation if has_claim_amount else None
-        ),
+        "expected_condemnation": (estimate.expected_condemnation if has_claim_amount else None),
         "condemnation_q10": estimate.condemnation_q10 if has_claim_amount else None,
         "condemnation_q50": estimate.condemnation_q50 if has_claim_amount else None,
         "condemnation_q90": estimate.condemnation_q90 if has_claim_amount else None,
@@ -389,9 +385,7 @@ async def review_agreement_justification(state: AnalysisState) -> dict[str, obje
 
     resolved = _resolved_input(state)
     missing_documents = [
-        label
-        for field, label in _EVIDENCE_LABELS.items()
-        if not getattr(resolved.evidence, field)
+        label for field, label in _EVIDENCE_LABELS.items() if not getattr(resolved.evidence, field)
     ]
     document_context = state.get("document_context", "")
     if not document_context:

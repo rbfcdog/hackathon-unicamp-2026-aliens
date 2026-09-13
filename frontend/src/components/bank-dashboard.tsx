@@ -1,19 +1,16 @@
 "use client";
+// Admin dashboard records real case outcomes and compares them with approved decisions.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Building2,
   Check,
   CircleAlert,
-  CircleCheckBig,
-  CircleX,
   Clock3,
   FileCheck2,
   RefreshCw,
   Scale,
-  ShieldCheck,
-  TrendingDown,
 } from "lucide-react";
 import { apiEventStream, apiFetch } from "@/lib/api";
 import type {
@@ -30,11 +27,17 @@ const decisionLabels: Record<DecisionChoice, string> = {
   human_review: "Revisão humana",
 };
 
-const adherenceLabels: Record<BankDecisionItem["adherence_status"], string> = {
-  adherent: "Aderente",
-  justified: "Justificada",
-  divergent: "Divergente",
+const outcomeLabels: Record<BankDecisionItem["outcome"], string> = {
+  pending: "Não registrado",
+  favorable: "Defesa favorável",
+  settled: "Acordo celebrado",
+  unfavorable: "Condenação",
 };
+const bankStatusLabels: Record<BankDecisionItem["bank_status"], string> = {
+  pending: "Aguardando encaminhamento",
+  approved: "Encaminhada",
+};
+
 
 const judgeDispositionLabels: Record<BankJudgeReview["disposition"], string> = {
   grant_claim: "Procedência",
@@ -42,23 +45,19 @@ const judgeDispositionLabels: Record<BankJudgeReview["disposition"], string> = {
   partial_grant: "Procedência parcial",
   insufficient_evidence: "Prova insuficiente",
 };
-const OUTCOME_SIMULATION_MS = 3_000;
-
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(value);
+function formatCostDifference(value: number): string {
+  return `${value > 0 ? "+" : ""}${formatCurrency(value)}`;
 }
+
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -68,12 +67,7 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function formatMonth(value: string): string {
-  const [year, month] = value.split("-").map(Number);
-  return new Intl.DateTimeFormat("pt-BR", { month: "short", year: "2-digit" })
-    .format(new Date(Date.UTC(year, month - 1, 1)))
-    .replace(" de ", " ");
-}
+const formatNumber = new Intl.NumberFormat("pt-BR");
 
 export function BankDashboard() {
   const [dashboard, setDashboard] = useState<BankDashboardResponse | null>(null);
@@ -83,8 +77,14 @@ export function BankDashboard() {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [judgeReview, setJudgeReview] = useState<BankJudgeReview | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Exclude<BankDecisionItem["outcome"], "pending">>(
+    "favorable",
+  );
+  const [actualCost, setActualCost] = useState("");
   const [error, setError] = useState<string | null>(null);
   const requestedReviewsRef = useRef(new Set<string>());
+  const selectedIdRef = useRef<string | null>(null);
 
   const loadDashboard = useCallback(async (background = false) => {
     if (background) setRefreshing(true);
@@ -92,18 +92,27 @@ export function BankDashboard() {
       const result = await apiFetch<BankDashboardResponse>("/v1/bank/dashboard", {
         cache: "no-store",
       });
+      const nextSelectedDecision =
+        result.decisions.find(
+          (decision) => decision.id === selectedIdRef.current,
+        ) ?? result.decisions[0] ?? null;
       setDashboard(result);
-      setSelectedId((current) =>
-        current && result.decisions.some((decision) => decision.id === current)
-          ? current
-          : result.decisions[0]?.id ?? null,
-      );
+      selectedIdRef.current = nextSelectedDecision?.id ?? null;
+      setSelectedId(selectedIdRef.current);
+      if (nextSelectedDecision) {
+        setOutcome(
+          nextSelectedDecision.outcome === "pending"
+            ? "favorable"
+            : nextSelectedDecision.outcome,
+        );
+        setActualCost(nextSelectedDecision.actual_cost?.toString() ?? "");
+      }
       setError(null);
     } catch (caught: unknown) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Não foi possível carregar as decisões dos advogados.",
+          : "Não foi possível carregar as decisões registradas.",
       );
     } finally {
       setLoading(false);
@@ -127,22 +136,18 @@ export function BankDashboard() {
 
   const reviewedDecision =
     judgeReview?.case_number === selectedDecision?.case_number ? judgeReview : null;
-  const selectedOutcomeImpact =
-    selectedDecision?.projected_outcome === "favorable"
-      ? selectedDecision.optimized_savings ?? 0
-      : selectedDecision?.projected_outcome === "unfavorable"
-        ? selectedDecision.projected_decision_cost ??
-          selectedDecision.historical_estimated_condemnation
-        : null;
 
 
-  function selectDecision(decisionId: string) {
-    setSelectedId(decisionId);
+  function selectDecision(decision: BankDecisionItem) {
+    selectedIdRef.current = decision.id;
+    setSelectedId(decision.id);
+    setOutcome(decision.outcome === "pending" ? "favorable" : decision.outcome);
+    setActualCost(decision.actual_cost?.toString() ?? "");
     setJudgeReview(null);
   }
 
   const reviewDecision = useCallback(async (decision: BankDecisionItem) => {
-    if (reviewingId || approvingId) return;
+    if (reviewingId || approvingId || recordingId) return;
     setReviewingId(decision.id);
     setJudgeReview(null);
     setError(null);
@@ -163,25 +168,25 @@ export function BankDashboard() {
               "message" in event.data &&
               typeof event.data.message === "string"
                 ? event.data.message
-                : "Não foi possível concluir a revisão do agente juiz.";
+                : "Não foi possível concluir a revisão independente.";
             throw new Error(message);
           }
         },
       );
       if (!completedReview) {
-        throw new Error("A revisão do agente juiz foi encerrada sem parecer.");
+        throw new Error("A revisão independente foi encerrada sem parecer.");
       }
       setJudgeReview(completedReview);
     } catch (caught: unknown) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Não foi possível concluir a revisão do agente juiz.",
+          : "Não foi possível concluir a revisão independente.",
       );
     } finally {
       setReviewingId(null);
     }
-  }, [approvingId, reviewingId]);
+  }, [approvingId, recordingId, reviewingId]);
 
   useEffect(() => {
     if (
@@ -195,19 +200,15 @@ export function BankDashboard() {
     void reviewDecision(selectedDecision);
   }, [reviewDecision, reviewedDecision, selectedDecision]);
 
-
   async function approveSelectedDecision() {
     if (!selectedDecision || approvingId) return;
     if (!reviewedDecision) {
-      setError("Revise a decisão com o agente juiz antes de encaminhá-la.");
+      setError("Conclua a revisão independente antes de encaminhar a decisão.");
       return;
     }
     setApprovingId(selectedDecision.id);
     setError(null);
     try {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      window.setTimeout(resolve, OUTCOME_SIMULATION_MS);
-      await promise;
       await apiFetch<BankDecisionItem>(
         `/v1/bank/decisions/${selectedDecision.id}/approve`,
         { method: "POST" },
@@ -224,12 +225,43 @@ export function BankDashboard() {
     }
   }
 
+  async function recordSelectedOutcome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedDecision || recordingId) return;
+    const parsedCost = outcome === "favorable" ? 0 : Number(actualCost.replace(",", "."));
+    if (!Number.isFinite(parsedCost) || parsedCost < 0 || (outcome !== "favorable" && !parsedCost)) {
+      setError("Informe o custo realizado para registrar o resultado.");
+      return;
+    }
+    setRecordingId(selectedDecision.id);
+    setError(null);
+    try {
+      await apiFetch<BankDecisionItem>(
+        `/v1/bank/decisions/${selectedDecision.id}/outcome`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ outcome, actual_cost: parsedCost }),
+        },
+      );
+      await loadDashboard(true);
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Não foi possível registrar o resultado.",
+      );
+    } finally {
+      setRecordingId(null);
+    }
+  }
+
   if (loading && !dashboard) {
     return (
       <main className={styles.statePage} aria-live="polite">
         <span className={styles.loader} />
-        <strong>Conectando à operação bancária</strong>
-        <p>Carregando decisões persistidas no banco de dados.</p>
+        <strong>Conectando à operação</strong>
+        <p>Carregando decisões registradas.</p>
       </main>
     );
   }
@@ -250,24 +282,28 @@ export function BankDashboard() {
   const { metrics } = dashboard;
   const kpis = [
     {
-      label: "Aderência",
-      value: formatPercent(metrics.adherence_rate),
-      icon: ShieldCheck,
+      label: "Processos acompanhados",
+      value: formatNumber.format(metrics.process_count),
+      note: `${formatNumber.format(metrics.decision_count)} decisões registradas`,
+      icon: Building2,
     },
     {
-      label: "Economia",
-      value: formatCurrency(metrics.estimated_savings),
-      icon: TrendingDown,
+      label: "Decisões encaminhadas",
+      value: formatNumber.format(metrics.approved_count),
+      note: "Prontas para acompanhamento do resultado.",
+      icon: Check,
     },
     {
-      label: "Êxito das decisões",
-      value: formatPercent(metrics.projected_success_rate),
-      icon: CircleCheckBig,
+      label: "Resultados registrados",
+      value: formatNumber.format(metrics.outcome_recorded_count),
+      note: "Com desfecho e custo efetivamente informados.",
+      icon: FileCheck2,
     },
     {
-      label: "Processos",
-      value: new Intl.NumberFormat("pt-BR").format(metrics.process_count),
-      icon: Scale,
+      label: "Aguardando resultado",
+      value: formatNumber.format(metrics.pending_outcome_count),
+      note: "Decisões encaminhadas sem desfecho informado.",
+      icon: Clock3,
     },
   ];
 
@@ -283,7 +319,7 @@ export function BankDashboard() {
           <Building2 size={17} />
           <div>
             <span>Administração</span>
-            <strong>Política de acordos</strong>
+            <strong>Decisões e resultados</strong>
           </div>
         </div>
         <button
@@ -299,106 +335,78 @@ export function BankDashboard() {
       </header>
 
       <div className={styles.content}>
-
         <section
           aria-label="Indicadores principais"
           className={styles.kpiGrid}
           id="monitoramento"
         >
-          {kpis.map(({ label, value, icon: Icon }) => (
+          {kpis.map(({ label, value, note, icon: Icon }) => (
             <article className={styles.kpiCard} key={label}>
               <div className={styles.kpiHeader}>
                 <span>{label}</span>
                 <Icon size={16} />
               </div>
               <strong>{value}</strong>
+              <p>{note}</p>
             </article>
           ))}
-        </section>
-
-        <section className={styles.adherenceSection}>
-          <div className={styles.sectionHeading}>
-            <div>
-              <span>Leitura de aderência</span>
-              <h2>Como os advogados estão respondendo à recomendação</h2>
-            </div>
-          </div>
-          <div className={styles.adherenceRail}>
-            {(
-              [
-                ["adherent", metrics.adherent_count],
-                ["justified", metrics.justified_count],
-                ["divergent", metrics.divergent_count],
-              ] as const
-            ).map(([status, count]) => (
-              <article className={`${styles.adherenceCard} ${styles[status]}`} key={status}>
-                <i />
-                <strong>{count}</strong>
-                <span>{adherenceLabels[status]}</span>
-              </article>
-            ))}
-          </div>
         </section>
 
         <section className={styles.decisionsSection} id="decisoes">
           <div className={styles.sectionHeading}>
             <div>
-              <span>Fila operacional</span>
-              <h2>Últimas decisões dos advogados</h2>
+              <span>Decisões registradas</span>
+              <h2>Acompanhamento das decisões</h2>
             </div>
           </div>
 
           {dashboard.decisions.length === 0 ? (
             <div className={styles.emptyState}>
               <Clock3 size={20} />
-              <strong>Nenhuma decisão recebida</strong>
-              <p>As decisões submetidas na área do advogado aparecerão aqui automaticamente.</p>
+              <strong>Nenhuma decisão registrada</strong>
+              <p>Quando uma decisão for registrada no processo, ela aparecerá aqui.</p>
             </div>
           ) : (
             <div className={styles.decisionWorkspace}>
               <div className={styles.decisionListColumn}>
                 <div className={styles.tableWrap}>
-                <table className={styles.decisionTable}>
-                  <thead>
-                    <tr>
-                      <th>Processo</th>
-                      <th>Recomendação</th>
-                      <th>Advogado</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboard.decisions.map((decision) => (
-                      <tr
-                        aria-selected={decision.id === selectedId}
-                        className={decision.id === selectedId ? styles.selectedRow : undefined}
-                        key={decision.id}
-                        onClick={() => selectDecision(decision.id)}
-                      >
-                        <td>
-                          <button onClick={() => selectDecision(decision.id)} type="button">
-                            <strong>{decision.process_title}</strong>
-                            <small>{decision.case_number}</small>
-                          </button>
-                        </td>
-                        <td>{decisionLabels[decision.model_recommendation]}</td>
-                        <td>{decisionLabels[decision.lawyer_recommendation]}</td>
-                        <td>
-                          <span className={`${styles.statusPill} ${styles[decision.adherence_status]}`}>
-                            <i /> {adherenceLabels[decision.adherence_status]}
-                          </span>
-                        </td>
+                  <table className={styles.decisionTable}>
+                    <thead>
+                      <tr>
+                        <th>Processo</th>
+                        <th>Decisão</th>
+                        <th>Encaminhamento</th>
+                        <th>Resultado</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {dashboard.decisions.map((decision) => (
+                        <tr
+                          aria-selected={decision.id === selectedId}
+                          className={decision.id === selectedId ? styles.selectedRow : undefined}
+                          key={decision.id}
+                          onClick={() => selectDecision(decision)}
+                        >
+                          <td>
+                            <button onClick={() => selectDecision(decision)} type="button">
+                              <strong>{decision.process_title}</strong>
+                              <small>{decision.case_number}</small>
+                            </button>
+                          </td>
+                          <td>{decisionLabels[decision.recommendation]}</td>
+                          <td>{bankStatusLabels[decision.bank_status]}</td>
+                          <td>{outcomeLabels[decision.outcome]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {selectedDecision && (
-                  <section className={styles.judgeReview} aria-label="Parecer do agente juiz">
+                  <section className={styles.judgeReview} aria-label="Parecer independente">
                     <div className={styles.judgeReviewHeader}>
                       <div>
                         <span>Parecer independente</span>
-                        <h4>Agente juiz</h4>
+                        <h4>Revisão documental</h4>
                       </div>
                       {reviewedDecision && (
                         <strong className={styles.judgeDisposition}>
@@ -423,8 +431,9 @@ export function BankDashboard() {
                       <>
                         <p className={styles.judgeReviewCopy}>{reviewedDecision.summary}</p>
                         <p className={styles.judgeMeta}>
-                          {formatPercent(reviewedDecision.confidence)} ·{" "}
                           {reviewedDecision.consulted_documents.length} documento
+                          {reviewedDecision.consulted_documents.length === 1 ? "" : "s"}
+                          {" consultado"}
                           {reviewedDecision.consulted_documents.length === 1 ? "" : "s"}
                         </p>
                         {(reviewedDecision.findings.length > 0 ||
@@ -451,12 +460,11 @@ export function BankDashboard() {
                             )}
                           </details>
                         )}
-
                       </>
                     ) : (
                       <button
                         className={styles.judgeButton}
-                        disabled={reviewingId !== null || approvingId !== null}
+                        disabled={reviewingId !== null || approvingId !== null || recordingId !== null}
                         onClick={() => void reviewDecision(selectedDecision)}
                         type="button"
                       >
@@ -476,166 +484,120 @@ export function BankDashboard() {
                   <h3>{selectedDecision.process_title}</h3>
                   <p className={styles.caseNumber}>{selectedDecision.case_number} · {selectedDecision.state}</p>
 
-                  <div className={styles.decisionFlow} aria-label="Fluxo da decisão">
+                  <div className={styles.decisionFlow} aria-label="Situação da decisão">
                     <div>
-                      <span>Recomendação</span>
-                      <strong>{decisionLabels[selectedDecision.model_recommendation]}</strong>
+                      <span>Decisão</span>
+                      <strong>{decisionLabels[selectedDecision.recommendation]}</strong>
                     </div>
                     <ArrowRight size={16} />
                     <div>
-                      <span>Advogado</span>
-                      <strong>{decisionLabels[selectedDecision.lawyer_recommendation]}</strong>
+                      <span>Encaminhamento</span>
+                      <strong>{bankStatusLabels[selectedDecision.bank_status]}</strong>
                     </div>
                     <ArrowRight size={16} />
                     <div>
-                      <span>Banco</span>
-                      <strong>{selectedDecision.bank_status === "approved" ? "Encaminhada" : "Pendente"}</strong>
-                    </div>
-                    <ArrowRight size={16} />
-                    <div
-                      className={
-                        selectedDecision.projected_outcome
-                          ? styles[selectedDecision.projected_outcome]
-                          : undefined
-                      }
-                    >
-                      <span>Resultado da causa</span>
-                      <strong>
-                        {selectedDecision.projected_outcome === "favorable"
-                          ? "Favorável"
-                          : selectedDecision.projected_outcome === "unfavorable"
-                            ? "Desfavorável"
-                            : "Aguardando"}
-                      </strong>
+                      <span>Resultado</span>
+                      <strong>{outcomeLabels[selectedDecision.outcome]}</strong>
                     </div>
                   </div>
-
-                  {approvingId === selectedDecision.id && (
-                    <div className={styles.outcomeWait} role="status" aria-live="polite">
-                      <div>
-                        <Clock3 size={17} />
-                        <span>Aguardando resultado da causa</span>
-                      </div>
-                      <div className={styles.outcomeWaitTrack} aria-hidden="true">
-                        <i />
-                      </div>
-                      <p>A decisão foi encaminhada. Consolidando o desfecho e o impacto financeiro.</p>
-                    </div>
-                  )}
-
-                  {selectedDecision.projected_outcome && (
-                    <div
-                      className={`${styles.outcomePath} ${
-                        styles[selectedDecision.projected_outcome]
-                      }`}
-                    >
-                      <div className={styles.outcomePathHeader}>
-                        {selectedDecision.projected_outcome === "favorable" ? (
-                          <CircleCheckBig size={18} />
-                        ) : (
-                          <CircleX size={18} />
-                        )}
-                        <div>
-                          <strong>
-                            Causa encerrada com resultado{" "}
-                            {selectedDecision.projected_outcome === "favorable"
-                              ? "favorável"
-                              : "desfavorável"}
-                          </strong>
-                        </div>
-                      </div>
-                      <div className={styles.outcomeBranches} aria-hidden="true">
-                        <i className={styles.favorableBranch}>Favorável</i>
-                        <i className={styles.unfavorableBranch}>Desfavorável</i>
-                      </div>
-                      {selectedOutcomeImpact !== null && (
-                        <div className={styles.outcomeResultSummary}>
-                          <div>
-                            <span>
-                              {selectedDecision.projected_outcome === "favorable"
-                                ? "Economia obtida"
-                                : "Perda na causa"}
-                            </span>
-                            <strong>{formatCurrency(selectedOutcomeImpact)}</strong>
-                          </div>
-                          <div>
-                            <span>Custo final</span>
-                            <strong>
-                              {formatCurrency(selectedDecision.projected_decision_cost ?? 0)}
-                            </strong>
-                          </div>
-                        </div>
-                      )}
-                      <p>{selectedDecision.projected_outcome_reason}</p>
-                    </div>
-                  )}
 
                   <dl className={styles.detailList}>
                     <div>
                       <dt>Justificativa</dt>
-                      <dd>{selectedDecision.justification ?? "Decisão aderente; justificativa não exigida."}</dd>
+                      <dd>{selectedDecision.justification ?? "Nenhuma justificativa foi registrada."}</dd>
                     </div>
                     <div>
                       <dt>Subsídios nos autos</dt>
                       <dd><FileCheck2 size={14} /> {selectedDecision.evidence_count} de 6 documentos disponíveis</dd>
                     </div>
                     <div>
-                      <dt>Exposição</dt>
-                      <dd>{formatCurrency(selectedDecision.expected_condemnation)}</dd>
+                      <dt>Referência na decisão</dt>
+                      <dd>{formatCurrency(selectedDecision.expected_cost)}</dd>
                     </div>
                     <div>
                       <dt>Valor da causa</dt>
                       <dd>{formatCurrency(selectedDecision.claim_amount)}</dd>
                     </div>
                     <div>
-                      <dt>Condenação de referência</dt>
+                      <dt>Resultado da causa</dt>
+                      <dd>{outcomeLabels[selectedDecision.outcome]}</dd>
+                    </div>
+                    <div>
+                      <dt>Custo realizado</dt>
                       <dd>
-                        {formatCurrency(selectedDecision.historical_estimated_condemnation)}
-                        {" · "}
-                        {formatPercent(metrics.historical_condemnation_ratio)} do valor da causa
+                        {selectedDecision.actual_cost === null
+                          ? "Ainda não registrado."
+                          : formatCurrency(selectedDecision.actual_cost)}
                       </dd>
                     </div>
-                    {selectedDecision.projected_decision_cost !== null && (
-                      <div>
-                        <dt>Custo final da decisão</dt>
-                        <dd>{formatCurrency(selectedDecision.projected_decision_cost)}</dd>
-                      </div>
-                    )}
-                    {selectedDecision.optimized_savings !== null && (
-                      <div>
-                        <dt>Economia obtida</dt>
-                        <dd className={styles.optimizedValue}>
-                          {formatCurrency(selectedDecision.optimized_savings)}
-                        </dd>
-                      </div>
-                    )}
                   </dl>
 
-
-                  <button
-                    className={styles.approveButton}
-                    disabled={
-                      selectedDecision.bank_status === "approved" ||
-                      approvingId !== null ||
-                      reviewingId !== null ||
-                      !reviewedDecision
-                    }
-                    onClick={() => void approveSelectedDecision()}
-                    type="button"
-                  >
-                    {approvingId === selectedDecision.id ? (
-                      <span className={styles.loader} />
-                    ) : selectedDecision.bank_status === "approved" ? (
-                      <Check size={16} />
-                    ) : (
-                      <ArrowRight size={16} />
-                    )}
-                    {approvingId === selectedDecision.id
-                      ? "Aguardando resultado"
-                      : selectedDecision.bank_status === "approved"
-                        ? "Resultado registrado"
+                  {selectedDecision.bank_status === "approved" ? (
+                    <form className={styles.outcomeForm} onSubmit={recordSelectedOutcome}>
+                      <div>
+                        <span>Resultado processual</span>
+                        <h4>Registrar resultado real</h4>
+                      </div>
+                      <label className={styles.outcomeField}>
+                        <span>Desfecho</span>
+                        <select
+                          onChange={(event) => setOutcome(
+                            event.target.value as Exclude<BankDecisionItem["outcome"], "pending">,
+                          )}
+                          value={outcome}
+                        >
+                          <option value="favorable">Defesa favorável</option>
+                          <option value="settled">Acordo celebrado</option>
+                          <option value="unfavorable">Condenação</option>
+                        </select>
+                      </label>
+                      <label className={styles.outcomeField}>
+                        <span>Custo realizado</span>
+                        <input
+                          disabled={outcome === "favorable"}
+                          inputMode="decimal"
+                          min="0"
+                          onChange={(event) => setActualCost(event.target.value)}
+                          placeholder={outcome === "favorable" ? "R$ 0,00" : "R$ 0,00"}
+                          required={outcome !== "favorable"}
+                          step="0.01"
+                          type="number"
+                          value={outcome === "favorable" ? "0" : actualCost}
+                        />
+                      </label>
+                      <button
+                        className={styles.outcomeButton}
+                        disabled={recordingId !== null}
+                        type="submit"
+                      >
+                        {recordingId === selectedDecision.id ? <span className={styles.loader} /> : <Check size={15} />}
+                        {selectedDecision.outcome === "pending"
+                          ? "Salvar resultado"
+                          : "Atualizar resultado"}
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      className={styles.approveButton}
+                      disabled={
+                        approvingId !== null ||
+                        reviewingId !== null ||
+                        recordingId !== null ||
+                        !reviewedDecision
+                      }
+                      onClick={() => void approveSelectedDecision()}
+                      type="button"
+                    >
+                      {approvingId === selectedDecision.id ? (
+                        <span className={styles.loader} />
+                      ) : (
+                        <ArrowRight size={16} />
+                      )}
+                      {approvingId === selectedDecision.id
+                        ? "Encaminhando"
                         : "Prosseguir com a decisão"}
-                  </button>
+                    </button>
+                  )}
                 </article>
               )}
             </div>
@@ -645,67 +607,44 @@ export function BankDashboard() {
         <section className={styles.effectivenessSection} id="efetividade">
           <div className={styles.sectionHeading}>
             <div>
-              <span>Efetividade</span>
-              <h2>Resultados das decisões encaminhadas</h2>
+              <span>Resultados registrados</span>
+              <h2>Comparação com resultados reais</h2>
             </div>
           </div>
-          <div className={styles.effectivenessGrid}>
-            <article className={styles.savingsCard}>
-              <span>Economia acumulada</span>
-              <strong>{formatCurrency(metrics.estimated_savings)}</strong>
-              <div className={styles.outcomeLegend}>
-                <span><i className={styles.favorableSwatch} /> Favorável</span>
-                <span><i className={styles.unfavorableSwatch} /> Desfavorável</span>
-              </div>
-              {dashboard.monthly_effectiveness.length ? (
-                <div className={styles.monthlyChart}>
-                  {dashboard.monthly_effectiveness.map((item) => {
-                    const total = item.favorable_count + item.unfavorable_count;
-                    const favorableWidth = total ? (item.favorable_count / total) * 100 : 0;
-                    const unfavorableWidth = total ? (item.unfavorable_count / total) * 100 : 0;
-                    return (
-                      <div className={styles.chartRow} key={item.month}>
-                        <small>{formatMonth(item.month)}</small>
-                        <div className={styles.outcomeBar}>
-                          <i
-                            className={styles.favorableBar}
-                            style={{ "--bar-width": `${favorableWidth}%` } as CSSProperties}
-                          />
-                          <i
-                            className={styles.unfavorableBar}
-                            style={{ "--bar-width": `${unfavorableWidth}%` } as CSSProperties}
-                          />
-                        </div>
-                        <span>
-                          {formatCurrency(item.estimated_savings)}
-                          {" · "}
-                          {item.favorable_count}F/{item.unfavorable_count}D
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className={styles.chartEmpty}>
-                  Os desfechos aparecem quando o banco prossegue com uma decisão.
-                </p>
-              )}
-            </article>
-            <div className={styles.effectivenessMetrics}>
-              <article>
-                <span>Condenação-base</span>
-                <strong>{formatCurrency(metrics.estimated_condemnation_total)}</strong>
-                <small>
-                  {formatPercent(metrics.historical_condemnation_ratio)} do valor das causas
-                </small>
+          {metrics.outcome_recorded_count === 0 ? (
+            <div className={styles.emptyState}>
+              <Clock3 size={20} />
+              <strong>Ainda não há resultados registrados</strong>
+              <p>Registre o desfecho de uma decisão encaminhada para compará-lo com a referência.</p>
+            </div>
+          ) : (
+            <div className={styles.comparisonGrid}>
+              <article className={styles.comparisonCard}>
+                <span>Resultados registrados</span>
+                <strong>{formatNumber.format(metrics.outcome_recorded_count)}</strong>
+                <p>Decisões com desfecho efetivamente informado.</p>
               </article>
-              <article>
-                <span>Custo realizado das decisões</span>
-                <strong>{formatCurrency(metrics.optimized_decision_cost)}</strong>
-                <small>Acordos concluídos e causas desfavoráveis</small>
+              <article className={styles.comparisonCard}>
+                <span>Custo realizado</span>
+                <strong>{formatCurrency(metrics.actual_cost_total)}</strong>
+                <p>Somatório dos resultados já registrados.</p>
+              </article>
+              <article className={styles.comparisonCard}>
+                <span>Referência nas decisões</span>
+                <strong>{formatCurrency(metrics.expected_cost_total)}</strong>
+                <p>Valor registrado quando cada decisão foi encaminhada.</p>
+              </article>
+              <article
+                className={`${styles.comparisonCard} ${
+                  metrics.cost_difference <= 0 ? styles.comparisonPositive : styles.comparisonNegative
+                }`}
+              >
+                <span>Variação apurada</span>
+                <strong>{formatCostDifference(metrics.cost_difference)}</strong>
+                <p>Realizado menos a referência da decisão.</p>
               </article>
             </div>
-          </div>
+          )}
         </section>
 
         {error && <div className={styles.errorBanner} role="alert"><CircleAlert size={15} /> {error}</div>}

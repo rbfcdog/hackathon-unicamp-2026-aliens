@@ -15,6 +15,7 @@ class EvidenceInput(BaseModel):
     debt_evolution: bool = False
     referenced_report: bool = False
 
+
 class AgreementJustificationReview(BaseModel):
     verdict: Literal[
         "supported",
@@ -26,11 +27,11 @@ class AgreementJustificationReview(BaseModel):
     supporting_evidence: list[str] = Field(default_factory=list, max_length=8)
     missing_documents: list[str] = Field(default_factory=list, max_length=6)
 
+
 class DecisionJustifications(BaseModel):
     agreement: str = Field(min_length=20, max_length=1_200)
     defense: str = Field(min_length=20, max_length=1_200)
     human_review: str = Field(min_length=20, max_length=1_200)
-
 
 
 class AnalysisRequest(BaseModel):
@@ -62,9 +63,7 @@ class AnalysisRequest(BaseModel):
             self.analysis_review_mode == "agreement_justification"
             and self.lawyer_justification is None
         ):
-            raise ValueError(
-                "lawyer_justification is required for agreement_justification review"
-            )
+            raise ValueError("lawyer_justification is required for agreement_justification review")
         paths = [document.path for document in self.documents]
         if len(paths) != len(set(paths)):
             raise ValueError("documents must not contain duplicate paths")
@@ -75,8 +74,7 @@ class AnalysisRequest(BaseModel):
         ]
         if missing:
             raise ValueError(
-                "Sem documentos, informe os dados necessários para a análise: "
-                + ", ".join(missing)
+                "Sem documentos, informe os dados necessários para a análise: " + ", ".join(missing)
             )
         if self.sub_subject is None:
             self.sub_subject = "generic"
@@ -132,6 +130,7 @@ class AnalysisResult(BaseModel):
     unreadable_documents: list[DocumentPath] = Field(default_factory=list)
 
     agreement_justification_review: AgreementJustificationReview | None = None
+
     @model_validator(mode="after")
     def validate_condemnation_quantiles(self) -> "AnalysisResult":
         quantiles = (self.condemnation_q10, self.condemnation_q50, self.condemnation_q90)

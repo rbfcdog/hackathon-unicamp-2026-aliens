@@ -41,9 +41,7 @@ def get_judge_discussion_model() -> ChatOpenAI:
         output_version="responses/v1",
         timeout=60,
         max_retries=0,
-    ).with_config(
-        {"run_name": "bank-judge-discussion", "tags": ["judge-discussion"]}
-    )
+    ).with_config({"run_name": "bank-judge-discussion", "tags": ["judge-discussion"]})
 
 
 def _chunk_text(chunk: Any) -> str:
@@ -67,9 +65,7 @@ class JudgeDiscussionService:
         request: JudgeChatRequest,
     ) -> JudgeDiscussionContext:
         review = await bank_dashboard_service.review_decision(session, decision_id)
-        decision, process = await bank_dashboard_service._decision_and_process(
-            session, decision_id
-        )
+        decision, process = await bank_dashboard_service._decision_and_process(session, decision_id)
         documents = await process_document_service.list(session, process.case_number)
         case_number = process.case_number
         context = {

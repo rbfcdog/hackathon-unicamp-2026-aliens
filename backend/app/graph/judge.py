@@ -17,7 +17,7 @@ MAX_AGENT_TURNS = 24
 JUDGE_TOOLS = [*DOCUMENT_TOOLS, inspect_risk_model_card]
 _DOCUMENT_TOOL_NAMES = {tool.name for tool in DOCUMENT_TOOLS}
 _NODE_DOCUMENT_TYPES = {
-    "load_case_context": {"case_record"},
+    "load_case_context": {"case_record", "other"},
     "assess_contract_evidence": {"contract", "dossier"},
     "assess_credit_evidence": {"bank_statement", "credit_proof"},
     "assess_debt_economics": {"debt_evolution", "referenced_report"},
@@ -357,6 +357,18 @@ def build_judge_graph(
     decision_model: Runnable[Any, Any],
 ):
     async def call_agent(state: JudgeState) -> dict[str, object]:
+        if not _missing_documents(state):
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "Todos os documentos autorizados já foram pré-carregados "
+                            "para a decisão estruturada."
+                        )
+                    )
+                ],
+                "agent_turns": state.get("agent_turns", 0),
+            }
         response = await agent_model.ainvoke(
             [SystemMessage(content=_AGENT_SYSTEM_PROMPT), *state["messages"]]
         )

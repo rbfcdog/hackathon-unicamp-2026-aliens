@@ -267,7 +267,6 @@ def test_document_tool_rejects_file_not_supplied_to_review() -> None:
     assert "not supplied" in payload["error"]
 
 
-
 @pytest.mark.asyncio
 async def test_judge_service_normalizes_invalid_graph_output(
     monkeypatch: pytest.MonkeyPatch,
@@ -286,6 +285,7 @@ async def test_judge_service_normalizes_invalid_graph_output(
     async with SessionFactory() as session:
         with pytest.raises(JudgeOutputError, match="invalid review payload"):
             await JudgeService().review(session, request)
+
 
 @pytest.mark.asyncio
 async def test_judge_reference_endpoints_list_documents_and_process_data() -> None:

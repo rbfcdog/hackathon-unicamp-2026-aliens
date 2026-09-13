@@ -58,22 +58,16 @@ class AnalysisService:
                 process_claim_amount = float(process.claim_amount)
                 context_values.update(
                     {
-                        "state": request.state or (
-                            process.state if process.state.strip().upper() != "NA" else None
-                        ),
+                        "state": request.state
+                        or (process.state if process.state.strip().upper() != "NA" else None),
                         "sub_subject": request.sub_subject or process.sub_subject,
                         "claim_amount": (
                             request.claim_amount
                             if request.claim_amount is not None
-                            else (
-                                process_claim_amount
-                                if process_claim_amount > 0.01
-                                else None
-                            )
+                            else (process_claim_amount if process_claim_amount > 0.01 else None)
                         ),
-                        "evidence": request.evidence or EvidenceInput.model_validate(
-                            process.evidence
-                        ),
+                        "evidence": request.evidence
+                        or EvidenceInput.model_validate(process.evidence),
                     }
                 )
             context_request = AnalysisRequest.model_validate(context_values)
@@ -120,10 +114,7 @@ class AnalysisService:
             result = AnalysisResult.model_validate(graph_result)
             analysis.status = "completed"
             analysis.result_payload = result.model_dump(mode="json")
-            if (
-                result.model_inputs is not None
-                and result.model_inputs.claim_amount is not None
-            ):
+            if result.model_inputs is not None and result.model_inputs.claim_amount is not None:
                 await legal_process_service.upsert(
                     session,
                     LegalProcessCreate(

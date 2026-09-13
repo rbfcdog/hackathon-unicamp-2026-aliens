@@ -1,3 +1,5 @@
+# Process routes expose the case workspace and document-grounded views.
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.schemas.processes import (
+    EvidenceMatrixResponse,
     LegalProcessCreate,
     LegalProcessResponse,
     LegalProcessUpdate,
@@ -42,6 +45,28 @@ async def get_financial_overview(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/{case_number}/evidence-matrix",
+    response_model=EvidenceMatrixResponse,
+)
+async def get_evidence_matrix(
+    case_number: str,
+    session: SessionDependency,
+) -> EvidenceMatrixResponse:
+    try:
+        return await legal_process_service.evidence_matrix(session, case_number)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process not found",
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(

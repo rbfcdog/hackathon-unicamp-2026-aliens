@@ -1,174 +1,166 @@
-# HACKATHON UFMG 2026 — Enter AI Challenge
+# EnterOS
 
-**17 e 18 de Abril de 2026**
+Plataforma de apoio à decisão para processos bancários de não reconhecimento de empréstimo.
 
-> Aplique IA para resolver, em equipe, um problema real que toda grande empresa do Brasil enfrenta.
+O EnterOS organiza os autos e subsídios de cada processo, consulta os documentos com IA, estima o risco jurídico, recomenda acordo ou defesa e acompanha o resultado financeiro das decisões encaminhadas ao banco.
 
----
+## O que o projeto entrega
 
-## Premiação
+### Área do advogado
 
-**R$ 10.000** para a equipe vencedora
+- processos e documentos organizados em um único workspace;
+- upload e análise de PDFs;
+- chat documental com resposta transmitida por SSE;
+- ferramentas e fontes exibidas durante a resposta;
+- citações clicáveis que abrem o PDF na página consultada;
+- estimativa de risco, condenação e força documental;
+- recomendação de acordo, defesa ou revisão humana;
+- faixa de negociação com abertura, alvo e teto;
+- registro definitivo da decisão do advogado.
 
----
+### Área do banco
 
-## 1. Contexto
+- decisões recebidas dos advogados;
+- revisão independente automática;
+- acompanhamento de aderência à política;
+- registro do resultado de cada causa;
+- indicadores de êxito, economia e custo;
+- consolidação financeira das decisões concluídas.
 
-A **Enter** é uma empresa de Enterprise AI — a maior empresa nativa de IA do país — focada em soluções para processos jurídicos cíveis massificados: casos repetitivos em que pessoas físicas processam grandes empresas (ex: consumidor que processa uma companhia aérea por atraso de voo).
+## Arquitetura
 
-Seu produto principal, o **EnterOS**, é um modelo de operação jurídico onde uma empresa centraliza a gestão de todos os seus escritórios de advocacia, aprimorando a qualidade das peças jurídicas e a produtividade dos advogados. O EnterOS é construído sobre agentes de IA que automatizam e agregam inteligência a todas as etapas de um processo judicial — do recebimento da ação até o encerramento do caso.
+- **Frontend:** Next.js e React.
+- **Backend:** FastAPI e LangGraph.
+- **Banco de dados:** PostgreSQL com migrations Alembic.
+- **IA documental:** OpenAI com ferramentas de leitura de documentos.
+- **Machine learning:** ensemble de regressão logística e XGBoost.
+- **Streaming:** Server-Sent Events para ferramentas e tokens do chat.
+- **Observabilidade:** integração opcional com LangSmith.
 
----
+O diagrama completo está em [`docs/architecture.svg`](docs/architecture.svg).
 
-## 2. Problema: Política de Acordos
+## Pré-requisitos
 
-O **Banco UFMG** recebe, em média, **~15 mil novos processos por mês**. Desses, cerca de **~5 mil** envolvem um cenário específico: a pessoa que está processando o banco alega que **não reconhece a contratação de um empréstimo** — ela afirma estar sofrendo descontos referentes ao pagamento de um empréstimo que nunca contratou.
+- Docker com Docker Compose;
+- Node.js 20 ou superior;
+- npm;
+- chave da API da OpenAI.
 
-Diante de cada processo, o Banco precisa tomar uma decisão estratégica: **defender-se no judiciário ou propor um acordo**.
+Para executar o backend sem Docker também são necessários Python 3.12 e [`uv`](https://docs.astral.sh/uv/).
 
-O fluxo atual funciona assim:
+## Como iniciar
 
-1. Um advogado externo recebe o processo pela plataforma da Enter.
-2. Na plataforma, ele acessa os **Autos** (petição inicial, procuração, etc.) e os **Subsídios** (documentos do banco: extrato, contrato, comprovante de crédito, etc.).
-3. Com base nesses documentos e na política do banco, decide: **defesa ou acordo?**
-4. Se optar por acordo, entra em contato com a parte autora para negociar.
-5. Após a decisão, reporta: se optou por acordo ou defesa; o valor proposto; e o resultado da negociação.
+### 1. Configure o backend
 
-O desafio é triplo:
-- Definir uma **boa política de acordos**
-- Garantir que os advogados a sigam de forma **consistente**
-- **Monitorar continuamente** os resultados para avaliar se a política está sendo efetiva
-
----
-
-## 3. Sua Missão
-
-Construir uma solução que:
-
-- **Defina uma política de acordos** para o Banco UFMG em casos de não reconhecimento de contratação de empréstimo
-- **Garanta a implementação** dessa política pelo advogado que está analisando cada caso
-- **Monitore os resultados** para avaliar se a política de acordos está sendo efetiva
-
----
-
-## 4. Requisitos da Solução
-
-A solução deve conter, no mínimo:
-
-| # | Requisito |
-|---|-----------|
-| 1 | **Regra de decisão** — lógica que analise o processo e determine: acordo ou defesa |
-| 2 | **Sugestão de valor** — caso a recomendação seja acordo, sugerir qual valor oferecer |
-| 3 | **Acesso à recomendação** — meio prático do advogado acessar a recomendação para o caso que está analisando |
-| 4 | **Monitoramento de aderência** — forma do banco acompanhar se a política está sendo seguida pelos advogados |
-| 5 | **Monitoramento de efetividade** — forma do banco avaliar se a política está gerando os resultados esperados |
-
-> Fique à vontade para usar quaisquer ferramentas e tecnologias.
-
----
-
-## 5. O Que Você Está Recebendo
-
-Cada equipe receberá:
-
-- **Chave da OpenAI** com créditos carregados
-- **Base de dados** (`.csv`) com o resultado de 60.000 sentenças judiciais dos últimos meses do Banco UFMG em casos de não reconhecimento de contratação de empréstimo (número do caso, valor da causa, resultado, valor de condenação)
-- **Base de documentos** (subsídios) disponibilizados pelo Banco UFMG nos últimos 12 meses
-- **2 pastas de processos exemplo** para simulação, cada uma contendo:
-  - Autos na íntegra (petição inicial, procuração e demais documentos)
-  - Subsídios do cliente (documentos de defesa do banco)
-
-### Descrição dos Subsídios
-
-| Documento | Descrição |
-|-----------|-----------|
-| **Contrato** | Contrato firmado entre o Banco UFMG e a parte autora |
-| **Extrato** | Extrato da conta corrente da parte autora com o banco |
-| **Comprovante de crédito** | Documento regulatório junto ao BACEN atestando a legitimidade da operação |
-| **Dossiê** | Verificação de autenticidade das assinaturas e documentos pessoais do contrato |
-| **Demonstrativo de evolução da dívida** | Extrato mês a mês do saldo de dívida e pagamentos |
-| **Laudo referenciado** | Síntese da operação de crédito (data, valores, prazos, canal de contratação, etc.) |
-
----
-
-## 6. Formato de Entrega
-
-Cada equipe deve submeter **neste repositório**:
-
-```
-├── src/                  # código-fonte da solução
-├── data/                 # dados de exemplo (não inclua dados sensíveis)
-├── docs/                 # apresentação final e documentação
-│   └── presentation.*    # slides ou documento para a apresentação
-├── SETUP.md              # instruções de instalação e execução
-└── README.md             # este arquivo (pode ser complementado)
-```
-
-Além do repositório, submeter:
-
-1. **Repositório no GitHub** com o código-fonte completo
-2. **Arquivos auxiliares** necessários para executar a solução (dependências, setup, dados de exemplo)
-3. **Vídeo de até 2 minutos** demonstrando o funcionamento da ferramenta do ponto de vista do advogado
-4. **Apresentação** (slides ou outro formato) para a apresentação final — máx. 15 min — cobrindo:
-   - Explicação da política de acordos (linguagem acessível ao time jurídico)
-   - Potencial financeiro da iniciativa
-   - Experiência do usuário advogado
-   - Arquitetura e solução técnica
-   - Limitações conhecidas da solução
-   - Próximos passos (considerando 1 mês adicional de desenvolvimento)
-
----
-
-## 7. Critérios de Avaliação
-
-| # | Critério | Descrição |
-|---|----------|-----------|
-| 1 | **Leitura do problema** | Entendimento do caso, priorização correta e impacto no negócio |
-| 2 | **Criatividade e usabilidade** | Criatividade na abordagem e qualidade da experiência de uso |
-| 3 | **Colaboração** | Divisão de responsabilidades, colaboração e clareza na apresentação |
-| 4 | **Execução** | Acurácia do output, funcionalidades embarcadas, consistência e viabilidade |
-| 5 | **Uso de IA** | Aplicação de IA para acelerar, melhorar ou diferenciar a solução |
-
----
-
-## 8. Prazo
-
-| Evento | Data/Hora |
-|--------|-----------|
-| **Submissão** | 18/04 às **04:00** (da manhã) |
-| **Apresentações finais** | 18/04 às **07:00** |
-
-> Boa sorte — e bom café e/ou energético! ☕
-
----
-
-## Como Submeter
-
-### 1. Crie o repositório da sua equipe
-
-Acesse [github.com/talismanai/hackathon-ufmg-2026](https://github.com/talismanai/hackathon-ufmg-2026) e clique em **"Use this template" → "Create a new repository"**.
-
-- **Nome do repositório:** `hackathon-ufmg-2026-grupo<N>` — substitua `<N>` pelo número do seu grupo  
-  _Exemplo: `hackathon-ufmg-2026-grupo7`_
-- **Visibilidade:** `Public`
-
-### 2. Clone e desenvolva
+Na raiz do repositório:
 
 ```bash
-# Clone o repositório da sua equipe
-git clone https://github.com/<seu-usuario>/hackathon-ufmg-2026-grupo<N>.git
-cd hackathon-ufmg-2026-grupo<N>
-
-# Configure o ambiente seguindo o SETUP.md
+cp backend/.env.example backend/.env
 ```
 
-### 3. Submeta
+Preencha obrigatoriamente a chave:
 
-Envie a URL do seu repositório público para o formulário de entrega presente no site [hackathon.getenter.ai](https://hackathon.getenter.ai) até **18/04 às 04:00**.
-
-
-
-A URL deve seguir o formato:
+```env
+OPENAI_API_KEY=sua_chave_openai
 ```
-https://github.com/<usuario-ou-org>/hackathon-ufmg-2026-grupo<N>
+
+As demais configurações já possuem valores adequados para desenvolvimento local. O LangSmith é opcional.
+
+### 2. Configure o frontend
+
+```bash
+cp frontend/.env.example frontend/.env
 ```
+
+O valor padrão conecta o frontend à API local:
+
+```env
+BACKEND_URL=http://localhost:8000
+```
+
+### 3. Inicie banco e backend
+
+Em um terminal:
+
+```bash
+cd backend
+docker compose up --build
+```
+
+O Compose:
+
+1. inicia o PostgreSQL;
+2. aguarda o banco ficar saudável;
+3. aplica as migrations;
+4. inicia a API FastAPI.
+
+### 4. Inicie o frontend
+
+Em outro terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 5. Acesse
+
+| Serviço | Endereço |
+|---|---|
+| Área do advogado | <http://localhost:3000> |
+| Área do banco | <http://localhost:3000/admin> |
+| API | <http://localhost:8000> |
+| Swagger | <http://localhost:8000/docs> |
+| Readiness | <http://localhost:8000/ready> |
+
+Para encerrar o backend e o banco:
+
+```bash
+cd backend
+docker compose down
+```
+
+Os dados do PostgreSQL permanecem no volume Docker. Use `docker compose down -v` somente quando quiser apagá-los.
+
+## Execução local do backend
+
+Para desenvolver o backend fora do container, mantenha apenas o PostgreSQL no Docker:
+
+```bash
+cd backend
+docker compose up -d postgres
+uv sync --locked
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+```
+
+## Dados
+
+Os dados fornecidos para o projeto estão em:
+
+```text
+data/
+├── datasets/
+│   └── Hackaton_Enter_Base_Candidatos.xlsx
+└── cases/
+    ├── Caso_01_0801234-56-2024-8-10-0001/
+    └── Caso_02_0654321-09-2024-8-04-0001/
+```
+
+A planilha histórica alimenta os modelos de risco e severidade. As pastas de casos contêm os autos e subsídios usados na demonstração documental.
+
+## Estrutura do repositório
+
+```text
+backend/   API, agentes, política, ML, persistência e migrations
+frontend/  workspace do advogado e painel do banco
+data/      planilha histórica e processos de demonstração
+docs/      apresentação, vídeo e diagrama de arquitetura
+```
+
+## Entregáveis
+
+- [`docs/presentation.md`](docs/presentation.md)
+- [`docs/demo_video.md`](docs/demo_video.md)
+- [`docs/architecture.svg`](docs/architecture.svg)

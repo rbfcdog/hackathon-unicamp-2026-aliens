@@ -47,14 +47,17 @@ class ProcessDocumentService:
             return "referenced_report"
         return "other"
 
-    @staticmethod
-    def _uploaded_response(document: ProcessDocument) -> ProcessDocumentResponse:
+    @classmethod
+    def _uploaded_response(cls, document: ProcessDocument) -> ProcessDocumentResponse:
+        document_type = document.document_type
+        if document_type == "other":
+            document_type = cls._document_type(document.original_filename)
         return ProcessDocumentResponse(
             id=document.id,
             case_number=document.case_number,
             path=document.path,
             original_filename=document.original_filename,
-            document_type=document.document_type,
+            document_type=document_type,
             kind=document.kind,
             source="upload",
             size_bytes=document.size_bytes,
@@ -68,14 +71,25 @@ class ProcessDocumentService:
         case_number: str,
     ) -> ProcessDocumentListResponse:
         normalized_case = self._validate_case_number(case_number)
+        repository = DocumentRepository(get_settings().document_root)
         result = await session.execute(
             select(ProcessDocument)
             .where(ProcessDocument.case_number == normalized_case)
             .order_by(ProcessDocument.created_at, ProcessDocument.id)
         )
-        uploaded = [self._uploaded_response(document) for document in result.scalars()]
+        uploaded = []
+        for document in result.scalars():
+            try:
+                repository.resolve(
+                    document.path,
+                    expected_suffixes={".pdf", ".csv"},
+                )
+            except ValueError as exc:
+                if not str(exc).startswith("Document does not exist:"):
+                    raise
+                continue
+            uploaded.append(self._uploaded_response(document))
 
-        repository = DocumentRepository(get_settings().document_root)
         canonical_case = canonical_process_number(normalized_case)
         bundled = []
         uploaded_paths = {document.path for document in uploaded}
@@ -104,6 +118,7 @@ class ProcessDocumentService:
             case_number=normalized_case,
             documents=[*bundled, *uploaded],
         )
+
     async def resolve_content(
         self,
         session: AsyncSession,
@@ -125,7 +140,6 @@ class ProcessDocumentService:
         media_type = "application/pdf" if authorized.kind == "pdf" else "text/csv"
         return path, media_type
 
-
     async def upload(
         self,
         session: AsyncSession,
@@ -135,6 +149,9 @@ class ProcessDocumentService:
         document_type: EvidenceDocumentType,
     ) -> ProcessDocumentResponse:
         normalized_case = self._validate_case_number(case_number)
+        resolved_document_type = (
+            self._document_type(filename) if document_type == "other" else document_type
+        )
         repository = DocumentRepository(get_settings().document_root)
         count_result = await session.execute(
             select(func.count())
@@ -153,6 +170,23 @@ class ProcessDocumentService:
             )
             existing = existing_result.scalar_one_or_none()
             if existing is not None:
+                try:
+                    repository.resolve(
+                        existing.path,
+                        expected_suffixes={".pdf", ".csv"},
+                    )
+                except ValueError as exc:
+                    if not str(exc).startswith("Document does not exist:"):
+                        raise
+                    existing.path = str(stored["path"])
+                    existing.original_filename = filename.strip()
+                    existing.document_type = resolved_document_type
+                    existing.kind = str(stored["kind"])
+                    existing.size_bytes = int(stored["size_bytes"])
+                    existing.sha256 = str(stored["sha256"])
+                    await session.commit()
+                    await session.refresh(existing)
+                    return self._uploaded_response(existing)
                 await asyncio.to_thread(repository.delete_upload, str(stored["path"]))
                 return self._uploaded_response(existing)
 
@@ -160,7 +194,7 @@ class ProcessDocumentService:
                 case_number=normalized_case,
                 path=stored["path"],
                 original_filename=filename.strip(),
-                document_type=document_type,
+                document_type=resolved_document_type,
                 kind=stored["kind"],
                 size_bytes=stored["size_bytes"],
                 sha256=stored["sha256"],

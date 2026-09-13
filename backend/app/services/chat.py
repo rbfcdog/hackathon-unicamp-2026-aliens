@@ -37,8 +37,6 @@ _STREAM_END = object()
 _DOCUMENT_TOOL_NAMES = {tool.name for tool in DOCUMENT_TOOLS}
 
 
-
-
 @dataclass(frozen=True)
 class ChatStreamContext:
     session_id: uuid.UUID

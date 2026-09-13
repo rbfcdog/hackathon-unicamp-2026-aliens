@@ -37,8 +37,6 @@ def downgrade() -> None:
         "legal_processes",
         sa.Column("subject", sa.String(length=255), nullable=True),
     )
-    op.execute(
-        "UPDATE legal_processes SET location = state, subject = 'Processo jurídico'"
-    )
+    op.execute("UPDATE legal_processes SET location = state, subject = 'Processo jurídico'")
     op.alter_column("legal_processes", "location", nullable=False)
     op.alter_column("legal_processes", "subject", nullable=False)

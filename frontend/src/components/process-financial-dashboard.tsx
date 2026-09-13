@@ -1,4 +1,6 @@
 "use client";
+// Financial dashboard lets counsel register case data and assess documented evidence.
+
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import {
@@ -6,6 +8,7 @@ import {
   CheckCircle2,
   Database,
   FileCheck2,
+  FileText,
   PencilLine,
   RefreshCw,
   Save,
@@ -19,6 +22,8 @@ import type {
   AgreementJustificationReview,
   EvidenceInput,
   EvidenceKey,
+  EvidenceMatrixEntry,
+  EvidenceMatrixResponse,
   LegalProcess,
   ProcessFinancialOverview,
   SubmittedProcessDecision,
@@ -69,6 +74,12 @@ const reviewVerdictLabels: Record<AgreementJustificationReview["verdict"], strin
   partially_supported: "Justificativa parcialmente sustentada",
   insufficient_evidence: "Documentação insuficiente para validar a justificativa",
   not_supported: "Justificativa não sustentada pelos documentos",
+};
+
+const evidenceMatrixStatusLabels: Record<EvidenceMatrixEntry["status"], string> = {
+  supported: "Sustentado",
+  contradicted: "Contradito",
+  no_evidence: "Sem prova",
 };
 
 
@@ -128,6 +139,9 @@ export function ProcessFinancialDashboard({
     useState<DecisionJustificationDrafts>(emptyDecisionJustifications);
   const [submittedDecision, setSubmittedDecision] = useState<SubmittedProcessDecision | null>(null);
   const [editingDecision, setEditingDecision] = useState(false);
+  const [evidenceMatrix, setEvidenceMatrix] = useState<EvidenceMatrixResponse | null>(null);
+  const [evidenceMatrixError, setEvidenceMatrixError] = useState<string | null>(null);
+  const [evidenceMatrixRevision, setEvidenceMatrixRevision] = useState(0);
   const decisionJustification = decisionJustifications[decisionChoice];
 
   useEffect(() => {
@@ -175,6 +189,31 @@ export function ProcessFinancialDashboard({
 
     return () => controller.abort();
   }, [legalProcess.case_number, revision]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+
+    apiFetch<EvidenceMatrixResponse>(
+      `/v1/processes/${encodeURIComponent(legalProcess.case_number)}/evidence-matrix`,
+      { signal: controller.signal },
+    )
+      .then((result) => {
+        setEvidenceMatrix(result);
+        setEvidenceMatrixError(null);
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        setEvidenceMatrix(null);
+        setEvidenceMatrixError(
+          caught instanceof Error
+            ? caught.message
+            : "Não foi possível organizar as provas documentais.",
+        );
+      });
+
+    return () => controller.abort();
+  }, [legalProcess.case_number, revision, evidenceMatrixRevision]);
 
   async function persistForm(): Promise<LegalProcess> {
     if (!form) throw new Error("Os campos do processo ainda não foram carregados.");
@@ -453,6 +492,89 @@ export function ProcessFinancialDashboard({
           </div>
         </fieldset>
 
+        <section aria-labelledby="evidence-matrix-title" className="evidence-matrix">
+          <header className="evidence-matrix-header">
+            <div>
+              <span>Leitura documental</span>
+              <h3 id="evidence-matrix-title">Alegações e provas</h3>
+            </div>
+            <button
+              onClick={() => setEvidenceMatrixRevision((current) => current + 1)}
+              type="button"
+            >
+              <RefreshCw size={14} />
+              Atualizar
+            </button>
+          </header>
+          {evidenceMatrixError ? (
+            <div className="evidence-matrix-message error" role="alert">
+              <p>{evidenceMatrixError}</p>
+              <button
+                onClick={() => setEvidenceMatrixRevision((current) => current + 1)}
+                type="button"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : !evidenceMatrix ? (
+            <div aria-live="polite" className="evidence-matrix-message" role="status">
+              <span className="spinner" />
+              Organizando as evidências documentais.
+            </div>
+          ) : (
+            <div className="evidence-matrix-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ponto</th>
+                    <th>Situação</th>
+                    <th>Leitura</th>
+                    <th>Documento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evidenceMatrix.entries.map((entry) => (
+                    <tr key={entry.question}>
+                      <th scope="row">{entry.question}</th>
+                      <td>
+                        <span className={`evidence-matrix-status ${entry.status}`}>
+                          {evidenceMatrixStatusLabels[entry.status]}
+                        </span>
+                      </td>
+                      <td>{entry.explanation}</td>
+                      <td>
+                        {entry.citations.length > 0 ? (
+                          <div className="evidence-matrix-citations">
+                            {entry.citations.map((citation) => (
+                              <a
+                                href={`/api/backend/v1/processes/${encodeURIComponent(
+                                  legalProcess.case_number,
+                                )}/documents/content?document_path=${encodeURIComponent(
+                                  citation.document_path,
+                                )}#page=${citation.page}`}
+                                key={`${citation.document_path}-${citation.page}`}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                <FileText size={13} />
+                                {citation.document_name} · p. {citation.page}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="evidence-matrix-no-source">
+                            Sem página referenciada
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
         {modelAvailable && risk && decision && (
           <>
             <div className="financial-metrics-grid complete">
@@ -548,7 +670,7 @@ export function ProcessFinancialDashboard({
             {modelAvailable && decisionTone === "human_review" ? <AlertTriangle size={20} /> : <ShieldCheck size={20} />}
           </div>
           <div className="decision-copy">
-            <span>Decisão do advogado</span>
+            <span>Decisão do processo</span>
             <h3>{submittedDecision && !editingDecision ? "Decisão registrada" : "Registrar decisão"}</h3>
             <p>
               {submittedDecision && !editingDecision

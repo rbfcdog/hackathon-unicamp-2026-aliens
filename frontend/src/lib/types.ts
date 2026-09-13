@@ -1,3 +1,6 @@
+// Shared frontend contracts keep API responses consistent across workspaces.
+
+
 export type EvidenceKey =
   | "contract"
   | "bank_statement"
@@ -48,6 +51,28 @@ export type ProcessDocumentListResponse = {
   case_number: string;
   documents: ProcessDocument[];
 };
+
+export type EvidenceMatrixCitation = {
+  document_path: string;
+  document_name: string;
+  page: number;
+};
+
+export type EvidenceMatrixEntry = {
+  question:
+    | "Houve contratação?"
+    | "O crédito entrou na conta?"
+    | "Os descontos batem?"
+    | "A assinatura é compatível?";
+  status: "supported" | "contradicted" | "no_evidence";
+  explanation: string;
+  citations: EvidenceMatrixCitation[];
+};
+
+export type EvidenceMatrixResponse = {
+  entries: EvidenceMatrixEntry[];
+};
+
 
 export type ChatSession = {
   id: string;
@@ -141,9 +166,12 @@ export type SubmittedProcessDecision = {
   justification: string | null;
   bank_status: "pending" | "approved";
   bank_reviewed_at: string | null;
-  projected_outcome: "favorable" | "unfavorable" | null;
-  projected_outcome_reason: string | null;
-  model_snapshot: Record<string, unknown>;
+  outcome: "pending" | "favorable" | "settled" | "unfavorable";
+  actual_cost: number | null;
+  outcome_recorded_at: string | null;
+  negotiation_status: NegotiationStatus;
+  negotiation_amount: number | null;
+  negotiation_updated_at: string | null;
   created_at: string;
 };
 
@@ -188,6 +216,14 @@ export type ProcessFinancialOverview = {
   } | null;
 };
 export type DecisionChoice = "agreement" | "defense" | "human_review";
+export type AdherenceStatus = "adherent" | "justified" | "divergent" | "unavailable";
+export type NegotiationStatus =
+  | "not_applicable"
+  | "pending"
+  | "accepted"
+  | "refused"
+  | "counterproposal";
+
 
 export type BankDecisionItem = {
   id: string;
@@ -195,23 +231,22 @@ export type BankDecisionItem = {
   case_number: string;
   process_title: string;
   state: string;
-  model_recommendation: DecisionChoice;
-  recommended_amount: number | null;
-  lawyer_recommendation: DecisionChoice;
-  lawyer_amount: number | null;
+  recommendation: DecisionChoice;
+  model_recommendation: DecisionChoice | null;
+  adherence_status: AdherenceStatus;
+  amount: number | null;
   justification: string | null;
-  adherence_status: "adherent" | "justified" | "divergent";
   bank_status: "pending" | "approved";
   evidence_count: number;
   claim_amount: number;
-  historical_estimated_condemnation: number;
-  projected_decision_cost: number | null;
-  optimized_savings: number | null;
-  expected_condemnation: number;
+  expected_cost: number;
+  outcome: "pending" | "favorable" | "settled" | "unfavorable";
+  actual_cost: number | null;
+  outcome_recorded_at: string | null;
+  negotiation_status: NegotiationStatus;
+  negotiation_amount: number | null;
+  negotiation_updated_at: string | null;
   created_at: string;
-  loss_probability: number;
-  projected_outcome: "favorable" | "unfavorable" | null;
-  projected_outcome_reason: string | null;
   bank_reviewed_at: string | null;
 };
 
@@ -238,32 +273,25 @@ export type JudgeChatTurn = {
 export type BankDashboardResponse = {
   generated_at: string;
   metrics: {
-    adherence_rate: number;
-    estimated_savings: number;
-    acceptance_rate: number;
     process_count: number;
     decision_count: number;
-    adherent_count: number;
-    justified_count: number;
-    divergent_count: number;
     approved_count: number;
-    favorable_count: number;
-    unfavorable_count: number;
-    projected_success_rate: number;
-    historical_condemnation_ratio: number;
-    historical_sample_size: number;
-    estimated_condemnation_total: number;
-    optimized_decision_cost: number;
-    relative_savings: number;
-    average_offered_amount: number;
-    average_savings_per_case: number;
+    outcome_recorded_count: number;
+    pending_outcome_count: number;
+    actual_cost_total: number;
+    expected_cost_total: number;
+    cost_difference: number;
+    adherence_eligible_count: number;
+    adherent_count: number;
+    justified_divergence_count: number;
+    divergent_count: number;
+    adherence_rate: number;
+    negotiation_count: number;
+    accepted_count: number;
+    refused_count: number;
+    counterproposal_count: number;
+    acceptance_rate: number;
   };
-  monthly_effectiveness: Array<{
-    month: string;
-    favorable_count: number;
-    unfavorable_count: number;
-    estimated_savings: number;
-  }>;
   decisions: BankDecisionItem[];
 };
 

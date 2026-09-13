@@ -1,13 +1,24 @@
+# Bank API schemas expose decisions and recorded outcomes without projected results.
+
 import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 DecisionChoice = Literal["agreement", "defense", "human_review"]
-AdherenceStatus = Literal["adherent", "justified", "divergent"]
 BankDecisionStatus = Literal["pending", "approved"]
-ProjectedOutcome = Literal["favorable", "unfavorable"]
+RecordedOutcome = Literal["favorable", "settled", "unfavorable"]
+DecisionOutcome = Literal["pending", "favorable", "settled", "unfavorable"]
+AdherenceStatus = Literal["adherent", "justified", "divergent", "unavailable"]
+NegotiationStatus = Literal[
+    "not_applicable",
+    "pending",
+    "accepted",
+    "refused",
+    "counterproposal",
+]
+
 
 class JudgeChatTurn(BaseModel):
     role: Literal["user", "assistant"]
@@ -19,33 +30,38 @@ class JudgeChatRequest(BaseModel):
     history: list[JudgeChatTurn] = Field(default_factory=list, max_length=20)
 
 
+class BankOutcomeCreate(BaseModel):
+    outcome: RecordedOutcome
+    actual_cost: float = Field(ge=0, le=1_000_000_000)
+
+    @model_validator(mode="after")
+    def validate_actual_cost(self) -> "BankOutcomeCreate":
+        if self.outcome == "favorable" and self.actual_cost != 0:
+            raise ValueError("Uma defesa favorável deve registrar custo realizado de zero.")
+        if self.outcome != "favorable" and self.actual_cost <= 0:
+            raise ValueError("Acordo ou condenação exigem valor realizado maior que zero.")
+        return self
+
+
 class BankDashboardMetrics(BaseModel):
-    adherence_rate: float = Field(ge=0, le=1)
-    estimated_savings: float
-    acceptance_rate: float = Field(ge=0, le=1)
     process_count: int = Field(ge=0)
     decision_count: int = Field(ge=0)
-    adherent_count: int = Field(ge=0)
-    justified_count: int = Field(ge=0)
-    divergent_count: int = Field(ge=0)
     approved_count: int = Field(ge=0)
-    favorable_count: int = Field(ge=0)
-    unfavorable_count: int = Field(ge=0)
-    projected_success_rate: float = Field(ge=0, le=1)
-    historical_condemnation_ratio: float = Field(ge=0, le=1)
-    historical_sample_size: int = Field(gt=0)
-    estimated_condemnation_total: float = Field(ge=0)
-    optimized_decision_cost: float = Field(ge=0)
-    relative_savings: float
-    average_offered_amount: float = Field(ge=0)
-    average_savings_per_case: float
-
-
-class BankMonthlyEffectiveness(BaseModel):
-    month: str
-    favorable_count: int = Field(ge=0)
-    unfavorable_count: int = Field(ge=0)
-    estimated_savings: float
+    outcome_recorded_count: int = Field(ge=0)
+    pending_outcome_count: int = Field(ge=0)
+    actual_cost_total: float = Field(ge=0)
+    expected_cost_total: float = Field(ge=0)
+    cost_difference: float
+    adherence_eligible_count: int = Field(ge=0)
+    adherent_count: int = Field(ge=0)
+    justified_divergence_count: int = Field(ge=0)
+    divergent_count: int = Field(ge=0)
+    adherence_rate: float = Field(ge=0, le=1)
+    negotiation_count: int = Field(ge=0)
+    accepted_count: int = Field(ge=0)
+    refused_count: int = Field(ge=0)
+    counterproposal_count: int = Field(ge=0)
+    acceptance_rate: float = Field(ge=0, le=1)
 
 
 class BankDecisionItem(BaseModel):
@@ -54,28 +70,26 @@ class BankDecisionItem(BaseModel):
     case_number: str
     process_title: str
     state: str
-    model_recommendation: DecisionChoice
-    recommended_amount: float | None
-    lawyer_recommendation: DecisionChoice
-    lawyer_amount: float | None
-    justification: str | None
+    recommendation: DecisionChoice
+    model_recommendation: DecisionChoice | None
     adherence_status: AdherenceStatus
+    amount: float | None
+    justification: str | None
     bank_status: BankDecisionStatus
     evidence_count: int = Field(ge=0, le=6)
     claim_amount: float = Field(ge=0)
-    historical_estimated_condemnation: float = Field(ge=0)
-    projected_decision_cost: float | None = Field(default=None, ge=0)
-    optimized_savings: float | None
-    expected_condemnation: float
+    expected_cost: float = Field(ge=0)
+    outcome: DecisionOutcome
+    actual_cost: float | None = Field(default=None, ge=0)
+    outcome_recorded_at: datetime | None
+    negotiation_status: NegotiationStatus
+    negotiation_amount: float | None = Field(default=None, ge=0)
+    negotiation_updated_at: datetime | None
     created_at: datetime
-    loss_probability: float = Field(ge=0, le=1)
-    projected_outcome: ProjectedOutcome | None
-    projected_outcome_reason: str | None
     bank_reviewed_at: datetime | None
 
 
 class BankDashboardResponse(BaseModel):
     generated_at: datetime
     metrics: BankDashboardMetrics
-    monthly_effectiveness: list[BankMonthlyEffectiveness]
     decisions: list[BankDecisionItem]

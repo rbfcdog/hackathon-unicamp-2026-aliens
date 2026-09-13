@@ -1,3 +1,5 @@
+# Bank routes expose independent reviews, approved decisions, and recorded results.
+
 import asyncio
 import logging
 import uuid
@@ -9,7 +11,12 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.bank import BankDashboardResponse, BankDecisionItem, JudgeChatRequest
+from app.schemas.bank import (
+    BankDashboardResponse,
+    BankDecisionItem,
+    BankOutcomeCreate,
+    JudgeChatRequest,
+)
 from app.schemas.judge import JudgeReviewResponse
 from app.services.bank import bank_dashboard_service
 from app.services.judge import JudgeExecutionError, JudgeOutputError
@@ -48,7 +55,7 @@ async def review_bank_decision(
     except (JudgeExecutionError, JudgeOutputError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="A revisão do agente juiz falhou; a decisão não foi encaminhada.",
+            detail="A revisão independente falhou; a decisão não foi encaminhada.",
         ) from exc
     except Exception as exc:
         logger.exception("Unexpected bank judge review failure")
@@ -56,6 +63,7 @@ async def review_bank_decision(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Não foi possível concluir a revisão independente. Tente novamente.",
         ) from exc
+
 
 @router.post(
     "/decisions/{decision_id}/judge-review/stream",
@@ -69,9 +77,7 @@ async def stream_bank_decision_review(
         event="ready",
         data={"message": "A revisão independente foi iniciada."},
     )
-    review_task = asyncio.create_task(
-        bank_dashboard_service.review_decision(session, decision_id)
-    )
+    review_task = asyncio.create_task(bank_dashboard_service.review_decision(session, decision_id))
     try:
         while not review_task.done():
             done, _ = await asyncio.wait({review_task}, timeout=15)
@@ -93,7 +99,7 @@ async def stream_bank_decision_review(
     except (JudgeExecutionError, JudgeOutputError):
         yield ServerSentEvent(
             event="error",
-            data={"message": "A revisão do agente juiz falhou."},
+            data={"message": "A revisão independente falhou."},
         )
         return
     except Exception:
@@ -101,10 +107,7 @@ async def stream_bank_decision_review(
         yield ServerSentEvent(
             event="error",
             data={
-                "message": (
-                    "Não foi possível concluir a revisão independente. "
-                    "Tente novamente."
-                )
+                "message": ("Não foi possível concluir a revisão independente. Tente novamente.")
             },
         )
         return
@@ -115,7 +118,6 @@ async def stream_bank_decision_review(
         event="complete",
         data=review.model_dump(mode="json"),
     )
-
 
 
 @router.post(
@@ -142,10 +144,11 @@ async def stream_judge_discussion(
     except (JudgeExecutionError, JudgeOutputError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="A revisão do agente juiz falhou.",
+            detail="A revisão independente falhou.",
         ) from exc
     async for event in judge_discussion_service.stream(context):
         yield event
+
 
 @router.post(
     "/decisions/{decision_id}/approve",
@@ -170,5 +173,33 @@ async def approve_bank_decision(
     except (JudgeExecutionError, JudgeOutputError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="A revisão do agente juiz falhou; a decisão não foi encaminhada.",
+            detail="A revisão independente falhou; a decisão não foi encaminhada.",
+        ) from exc
+
+
+@router.post(
+    "/decisions/{decision_id}/outcome",
+    response_model=BankDecisionItem,
+)
+async def record_bank_decision_outcome(
+    decision_id: uuid.UUID,
+    payload: BankOutcomeCreate,
+    session: SessionDependency,
+) -> BankDecisionItem:
+    try:
+        return await bank_dashboard_service.record_outcome(
+            session,
+            decision_id,
+            payload.outcome,
+            payload.actual_cost,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Decision not found",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
         ) from exc

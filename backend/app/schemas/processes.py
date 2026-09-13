@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -138,9 +138,18 @@ class ProcessDecisionResponse(BaseModel):
     justification: str | None
     bank_status: Literal["pending", "approved"]
     bank_reviewed_at: datetime | None
-    projected_outcome: Literal["favorable", "unfavorable"] | None
-    projected_outcome_reason: str | None
-    model_snapshot: dict[str, Any]
+    outcome: Literal["pending", "favorable", "settled", "unfavorable"]
+    actual_cost: float | None
+    outcome_recorded_at: datetime | None
+    negotiation_status: Literal[
+        "not_applicable",
+        "pending",
+        "accepted",
+        "refused",
+        "counterproposal",
+    ]
+    negotiation_amount: float | None
+    negotiation_updated_at: datetime | None
     created_at: datetime
 
 

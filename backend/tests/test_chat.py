@@ -1,16 +1,20 @@
 import asyncio
+import json
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi.sse import ServerSentEvent
 from httpx import ASGITransport, AsyncClient
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 
 import app.api.routes.chat as chat_routes
 import app.services.chat as chat_module
+from app.config import get_settings
 from app.db.models import Analysis, ChatSession, LegalProcess
 from app.db.session import SessionFactory
+from app.documents import DocumentRepository
 from app.graph.chat import build_chat_react_graph
 from app.main import app
 from app.schemas.chat import ChatStreamRequest
@@ -27,12 +31,11 @@ async def test_process_documents_and_chat_sessions_are_isolated(
     csv_bytes = b"campo,valor\nvalor_da_causa,12500\n"
     document_id: str | None = None
     chat_id: str | None = None
+    missing_upload_directory: Path | None = None
 
     analysis_refreshes: list[str] = []
 
-    async def refresh_analysis(
-        _: object, refreshed_case_number: str, **__: object
-    ) -> None:
+    async def refresh_analysis(_: object, refreshed_case_number: str, **__: object) -> None:
         analysis_refreshes.append(refreshed_case_number)
 
     monkeypatch.setattr(
@@ -55,6 +58,14 @@ async def test_process_documents_and_chat_sessions_are_isolated(
             assert uploaded["case_number"] == case_number
             assert uploaded["source"] == "upload"
 
+            original_upload_path, _ = DocumentRepository(get_settings().document_root).resolve(
+                uploaded["path"], expected_suffixes={".csv"}
+            )
+            missing_upload_directory = original_upload_path.parent
+            original_upload_path.unlink()
+            missing_documents = await client.get(f"/v1/processes/{case_number}/documents")
+            assert missing_documents.json()["documents"] == []
+
             duplicate = await client.post(
                 f"/v1/processes/{case_number}/documents",
                 data={"document_type": "other"},
@@ -62,6 +73,7 @@ async def test_process_documents_and_chat_sessions_are_isolated(
             )
             assert duplicate.status_code == 201
             assert duplicate.json()["id"] == document_id
+            assert duplicate.json()["path"] != uploaded["path"]
 
             process_documents = await client.get(f"/v1/processes/{case_number}/documents")
             other_documents = await client.get(f"/v1/processes/{other_case}/documents")
@@ -70,7 +82,7 @@ async def test_process_documents_and_chat_sessions_are_isolated(
 
             content = await client.get(
                 f"/v1/processes/{case_number}/documents/content",
-                params={"document_path": uploaded["path"]},
+                params={"document_path": duplicate.json()["path"]},
             )
             cross_process_content = await client.get(
                 f"/v1/processes/{other_case}/documents/content",
@@ -94,6 +106,8 @@ async def test_process_documents_and_chat_sessions_are_isolated(
         finally:
             if document_id is not None:
                 await client.delete(f"/v1/processes/{case_number}/documents/{document_id}")
+            if missing_upload_directory is not None and missing_upload_directory.exists():
+                missing_upload_directory.rmdir()
 
     if chat_id is not None:
         async with SessionFactory() as session:
@@ -101,8 +115,6 @@ async def test_process_documents_and_chat_sessions_are_isolated(
             if chat is not None:
                 await session.delete(chat)
                 await session.commit()
-
-
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -196,6 +208,8 @@ async def test_chat_prompt_refreshes_analysis(
                     if draft_process is not None:
                         await session.delete(draft_process)
                 await session.commit()
+
+
 @pytest.mark.asyncio(loop_scope="session")
 async def test_draft_process_allows_a_documentless_chat() -> None:
     draft_id: uuid.UUID | None = None
@@ -294,9 +308,7 @@ async def test_chat_with_documents_keeps_greeting_as_latest_user_message() -> No
         }
     )
 
-    user_messages = [
-        message for message in finalizer_messages if isinstance(message, HumanMessage)
-    ]
+    user_messages = [message for message in finalizer_messages if isinstance(message, HumanMessage)]
     assert agent_calls == 1
     assert isinstance(finalizer_messages[0], SystemMessage)
     assert "consultados=" not in str(finalizer_messages[0].content)
@@ -305,6 +317,55 @@ async def test_chat_with_documents_keeps_greeting_as_latest_user_message() -> No
     assert result["answer"] == "Olá! Como posso ajudar?"
     assert result["consulted_documents"] == []
 
+
+@pytest.mark.asyncio
+async def test_chat_normalizes_friendly_page_references_into_link_citations() -> None:
+    document_path = "uploads/laudo/04_Laudo_Referenciado.pdf"
+
+    async def completed_agent(_: object) -> AIMessage:
+        return AIMessage(content="Consulta documental concluída.")
+
+    async def friendly_finalizer(_: object) -> AIMessage:
+        return AIMessage(
+            content=(
+                "4) Laudo referenciado\n"
+                "p. 1–2\n"
+                "- Página 2: apenas complementa com texto institucional."
+            )
+        )
+
+    graph = build_chat_react_graph(
+        RunnableLambda(completed_agent),
+        RunnableLambda(friendly_finalizer),
+    )
+    result = await graph.ainvoke(
+        {
+            "messages": [
+                HumanMessage(content="Resuma o laudo."),
+                ToolMessage(
+                    content=json.dumps(
+                        {
+                            "status": "ok",
+                            "document_path": document_path,
+                            "total_pages": 2,
+                            "content": "Conteúdo consultado.",
+                        }
+                    ),
+                    name="read_pdf_document",
+                    tool_call_id="read-laudo",
+                ),
+            ],
+            "allowed_document_paths": [document_path],
+            "agent_turns": 0,
+        }
+    )
+
+    assert result["answer"] == (
+        "4) Laudo referenciado\n"
+        f"[{document_path} — p. 1–2]\n"
+        f"- Página 2: apenas complementa com texto institucional. "
+        f"[{document_path} — p. 2]"
+    )
 
 
 @pytest.mark.asyncio
@@ -353,6 +414,7 @@ async def test_chat_prompts_explain_all_document_gaps_before_a_decision() -> Non
     assert "estado de cada uma das sete categorias documentais" in final_prompt
     assert "presente e útil, ausente, ou autorizada mas não lida/ilegível" in final_prompt
     assert "recomendar acordo, defesa ou revisão humana" in final_prompt
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_chat_persists_completed_document_tool_calls(

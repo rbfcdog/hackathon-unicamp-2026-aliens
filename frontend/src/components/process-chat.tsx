@@ -86,6 +86,14 @@ const CITATION_ENTRY_PATTERN =
 const BASE_CITATION_LINE_PATTERN = /^(\s*(?:-\s*)?Base:\s*)(.+?)(\.)?\s*$/iu;
 const FRIENDLY_CITATION_ENTRY_PATTERN =
   /^(.+?),\s*página(?:s)?\s+(\d+)(?:\s*(?:a|e|[-–])\s*(\d+))?$/iu;
+const FRIENDLY_SECTION_CITATION_LINE_PATTERN =
+  /^(\s*(?:\d+[.)]\s*)?)([^\[\]\n:]{3,80}?)\s+[—-]\s+página(?:s)?\s+(\d+)(?:\s*(?:a|e|[-–])\s*(\d+))?\s*:?\s*$/iu;
+const FRIENDLY_PAGE_DETAIL_LINE_PATTERN =
+  /^(\s*(?:[-*]\s*)?página\s+(\d+)\s*:.+)$/iu;
+const FRIENDLY_SECTION_LABEL_LINE_PATTERN =
+  /^(\s*(?:\d+[.)]\s*))([^\[\]\n:]{3,80}?)\s*$/iu;
+const FRIENDLY_STANDALONE_PAGE_LINE_PATTERN =
+  /^(\s*)p\.\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*$/iu;
 const CITATION_STOP_WORDS = new Set(["a", "as", "da", "das", "de", "do", "dos", "e"]);
 
 
@@ -132,9 +140,39 @@ function normalizeFriendlyBaseCitations(
   documentPaths: string[],
 ): string {
   if (documentPaths.length === 0) return content;
+  let activeDocumentPath: string | null = null;
   return content
     .split("\n")
     .map((line) => {
+      const sectionMatch = line.match(FRIENDLY_SECTION_CITATION_LINE_PATTERN);
+      if (sectionMatch) {
+        const [, prefix, label, startPage, endPage] = sectionMatch;
+        activeDocumentPath = resolveFriendlyCitationPath(label, documentPaths);
+        if (!activeDocumentPath) return line;
+        return `${prefix}${label.trim()} [${activeDocumentPath} — p. ${startPage}${endPage ? `–${endPage}` : ""}]`;
+      }
+
+      const pageDetailMatch = line.match(FRIENDLY_PAGE_DETAIL_LINE_PATTERN);
+      if (pageDetailMatch && activeDocumentPath && !line.includes("[")) {
+        const [, body, page] = pageDetailMatch;
+        return `${body} [${activeDocumentPath} — p. ${page}]`;
+      }
+
+      const sectionLabelMatch = line.match(FRIENDLY_SECTION_LABEL_LINE_PATTERN);
+      if (sectionLabelMatch) {
+        activeDocumentPath = resolveFriendlyCitationPath(
+          sectionLabelMatch[2],
+          documentPaths,
+        );
+        return line;
+      }
+
+      const standalonePageMatch = line.match(FRIENDLY_STANDALONE_PAGE_LINE_PATTERN);
+      if (standalonePageMatch && activeDocumentPath) {
+        const [, prefix, startPage, endPage] = standalonePageMatch;
+        return `${prefix}[${activeDocumentPath} — p. ${startPage}${endPage ? `–${endPage}` : ""}]`;
+      }
+
       const lineMatch = line.match(BASE_CITATION_LINE_PATTERN);
       if (!lineMatch) return line;
       const [, prefix, rawEntries, trailingPeriod] = lineMatch;
@@ -510,27 +548,38 @@ export function ProcessChat({
     return response.documents;
   }, [processPath]);
 
-  const refreshLatestAnalysis = useCallback(async () => {
+  const refreshLatestAnalysis = useCallback(async (): Promise<AnalysisResponse | null> => {
     const latestAnalysis = await apiFetch<AnalysisResponse | null>(
       `/v1/analyses/latest?case_number=${encodeURIComponent(caseNumber)}`,
     );
     setAnalysis(latestAnalysis);
+    return latestAnalysis;
   }, [caseNumber]);
 
   useEffect(() => {
     const wasInitiallyUploading = initialDocumentsUploadingRef.current;
     initialDocumentsUploadingRef.current = initialDocumentsUploading;
     if (!wasInitiallyUploading || initialDocumentsUploading) return;
-    void Promise.all([refreshDocuments(), refreshLatestAnalysis()]).catch(
-      (caught: unknown) => {
+    void (async () => {
+      try {
+        await Promise.all([refreshDocuments(), refreshLatestAnalysis()]);
+        if (!initialDocumentUploadError) {
+          setArtifact({ kind: "analysis" });
+        }
+      } catch (caught: unknown) {
         setError(
           caught instanceof Error
             ? caught.message
             : "Não foi possível atualizar os documentos do processo.",
         );
-      },
-    );
-  }, [initialDocumentsUploading, refreshDocuments, refreshLatestAnalysis]);
+      }
+    })();
+  }, [
+    initialDocumentUploadError,
+    initialDocumentsUploading,
+    refreshDocuments,
+    refreshLatestAnalysis,
+  ]);
 
   useEffect(() => {
     const previousCompleted = initialDocumentUploadCompletedRef.current;

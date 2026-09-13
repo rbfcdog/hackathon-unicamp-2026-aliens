@@ -1,3 +1,5 @@
+# Database models persist legal processes, decisions, and recorded case results.
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -80,10 +82,20 @@ class ProcessDecision(Base):
     bank_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    projected_outcome: Mapped[str | None] = mapped_column(
-        String(24), nullable=True, index=True
+    outcome: Mapped[str] = mapped_column(
+        String(24), default="pending", server_default="pending", index=True
     )
-    projected_outcome_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actual_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    outcome_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    negotiation_status: Mapped[str] = mapped_column(
+        String(24), default="not_applicable", server_default="not_applicable", index=True
+    )
+    negotiation_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    negotiation_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

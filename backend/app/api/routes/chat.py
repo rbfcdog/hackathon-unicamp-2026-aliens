@@ -53,9 +53,7 @@ def _message_requests_documentary_review(message: str) -> bool:
     )
     if not _REVIEW_TARGET_PATTERN.search(normalized):
         return False
-    if _REVIEW_ACTION_PATTERN.search(normalized) or _REVIEW_RATIONALE_PATTERN.search(
-        normalized
-    ):
+    if _REVIEW_ACTION_PATTERN.search(normalized) or _REVIEW_RATIONALE_PATTERN.search(normalized):
         return True
     return "?" not in normalized and bool(_REVIEW_POSITION_PATTERN.search(normalized))
 
@@ -94,6 +92,7 @@ async def list_process_documents(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+
 
 @router.get(
     "/documents/content",
@@ -269,9 +268,7 @@ async def stream_process_chat_message(
         context.case_number,
         analysis_review_mode=analysis_review_mode,
         lawyer_justification=(
-            payload.message
-            if analysis_review_mode == "agreement_justification"
-            else None
+            payload.message if analysis_review_mode == "agreement_justification" else None
         ),
     )
     completion: ServerSentEvent | None = None

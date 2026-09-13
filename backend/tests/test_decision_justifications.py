@@ -19,9 +19,13 @@ async def test_explanation_generates_an_editable_rationale_for_every_decision(
             return ExplanationOutput(
                 explanation="A documentação e a exposição indicam a conduta recomendada.",
                 decision_justifications=DecisionJustifications(
-                    agreement="O acordo pode reduzir a exposição dentro da faixa econômica indicada.",
+                    agreement=(
+                        "O acordo pode reduzir a exposição dentro da faixa econômica indicada."
+                    ),
                     defense="A defesa é adequada enquanto os documentos sustentarem a contratação.",
-                    human_review="A revisão humana é necessária para confirmar as lacunas documentais.",
+                    human_review=(
+                        "A revisão humana é necessária para confirmar as lacunas documentais."
+                    ),
                 ),
             )
 
